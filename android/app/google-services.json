@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "520824265760",
+    "project_id": "tprb-a73e4",
+    "storage_bucket": "tprb-a73e4.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:520824265760:android:1c6de1965defefac35b045",
+        "android_client_info": {
+          "package_name": "com.example.tprb_odfjell"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD1SRu0okS4RRAa9cILy5VBOIyz0CGkEoQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
