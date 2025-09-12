@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:tprb/widgets/widgets.dart';
 import 'new_user.dart';
 import 'admin_vessels.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/widgets.dart';
 
 class AdminPage extends StatefulWidget {
   const AdminPage({super.key});
@@ -38,47 +41,10 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
 
     return Scaffold(
       backgroundColor: const Color(0xFFF6F8FB),
-      appBar: AppBar(
-        elevation: 0,
-        backgroundColor: Colors.white,
-        titleSpacing: 0,
-        title: Row(
-          children: [
-            const SizedBox(width: 16),
-            const Icon(Icons.book_outlined, color: Colors.indigo),
-            const SizedBox(width: 8),
-            Text(
-              'TPRB Admin',
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(48),
-          child: Container(
-            color: Colors.white,
-            alignment: Alignment.center,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: _maxContentWidth),
-              child: TabBar(
-                controller: _tabController,
-                isScrollable: true,
-                labelColor: Colors.indigo,
-                unselectedLabelColor: Colors.black87,
-                indicatorColor: Colors.indigo,
-                tabs: const [
-                  Tab(text: 'TPRB Editions'),
-                  Tab(text: 'Chapters'),
-                  Tab(text: 'Tasks'),
-                  Tab(text: 'Vessels'),
-                  Tab(text: 'Users'),
-                ],
-              ),
-            ),
-          ),
-        ),
+      appBar: CustomTopBar(
+        userId: FirebaseAuth.instance.currentUser?.uid,
+        email: FirebaseAuth.instance.currentUser?.email,
+        bottom: AdminBottomTabs(controller: _tabController),
       ),
       body: Align(
         alignment: Alignment.topCenter,
@@ -89,8 +55,6 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
             controller: _tabController,
             children: [
               const _EditionsTab(),
-              const _ChaptersTab(),
-              const _TasksTab(),
               const _VesselsTab(),
               _UsersTab(onAddUser: _handleAddUser),
             ],

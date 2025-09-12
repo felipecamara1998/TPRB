@@ -1,5 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:tprb/widgets/widgets.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class OfficerReviewDashboardPage extends StatelessWidget {
   const OfficerReviewDashboardPage({super.key});
@@ -10,9 +12,9 @@ class OfficerReviewDashboardPage extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: const Color(0xFFF2F4F7), // fundo mais claro
-      appBar: const PreferredSize(
-        preferredSize: Size.fromHeight(56),
-        child: _TopBar(),
+      appBar: CustomTopBar(
+        userId: FirebaseAuth.instance.currentUser?.uid,
+        email: FirebaseAuth.instance.currentUser?.email,
       ),
       body: Center(
         child: ConstrainedBox(

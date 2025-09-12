@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart'; // kIsWeb (se quiser usar em outra parte)
 
 /// Use: Navigator.push(context, MaterialPageRoute(builder: (_) => const FleetOverviewPage()));
 class FleetOverviewPage extends StatelessWidget {
@@ -9,7 +12,7 @@ class FleetOverviewPage extends StatelessWidget {
     final bg = Colors.grey[100];
     return Scaffold(
       backgroundColor: bg,
-      appBar: const _TopBar(), // <-- NOVO topo completo
+      appBar: const _TopBar(), // <-- Top bar funcionando com Firebase
       body: LayoutBuilder(
         builder: (context, c) {
           return SingleChildScrollView(
@@ -172,24 +175,20 @@ class _TopBar extends StatelessWidget implements PreferredSizeWidget {
               const SizedBox(width: 8),
               const _OutlineAction(label: 'Export Report', icon: Icons.download),
               const SizedBox(width: 16),
-              // Usuário + cargo
-              Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: const [
-                  Text('Trevor Northage', style: TextStyle(fontWeight: FontWeight.w600)),
-                  SizedBox(height: 2),
-                  Text('Superintendent', style: TextStyle(fontSize: 12, color: Colors.grey)),
-                ],
-              ),
-              const SizedBox(width: 10),
-              const _UserAvatar(initials: 'TN'),
-              const SizedBox(width: 8),
+              // Usuário (Firebase) com mesmo layout da sua barra
+              const _OfficeUserFromFirebase(),
+              // Logout
               _OutlineAction(
                 label: 'Logout',
                 icon: Icons.logout,
-                onTap: () {
-                  // TODO: implemente sua ação de logout
+                onTap: () async {
+                  try {
+                    await FirebaseAuth.instance.signOut();
+                  } catch (_) {}
+                  if (context.mounted) {
+                    // redireciona para login; ajuste a rota se necessário
+                    Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+                  }
                 },
               ),
             ],
@@ -239,7 +238,10 @@ class _UserAvatar extends StatelessWidget {
     return CircleAvatar(
       radius: 16,
       backgroundColor: const Color(0xFF0F172A),
-      child: Text(initials, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+      child: Text(
+        initials.toUpperCase(),
+        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+      ),
     );
   }
 }
@@ -566,6 +568,122 @@ class _ChapterRow extends StatelessWidget {
         const SizedBox(height: 4),
         Text('$completion% fleet completion   ~$avgDays days avg', style: TextStyle(color: Colors.grey[700])),
       ]),
+    );
+  }
+}
+
+/* =================== FIREBASE: Usuário na Top Bar =================== */
+
+class _OfficeUserFromFirebase extends StatelessWidget {
+  const _OfficeUserFromFirebase();
+
+  @override
+  Widget build(BuildContext context) {
+    final auth = FirebaseAuth.instance;
+    final uid = auth.currentUser?.uid;
+    final email = auth.currentUser?.email;
+
+    if (uid != null) {
+      final docStream = FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .snapshots();
+
+      return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+        stream: docStream,
+        builder: (context, snap) {
+          final data = snap.data?.data() ?? <String, dynamic>{};
+          final name   = _pickName(data, email);
+          final role   = _pickRole(data);
+          final office = _pickOffice(data);
+          final inits  = _pickInitials(data, name);
+          return _UserChip(name: name, role: role, office: office, initials: inits);
+        },
+      );
+    } else if (email != null) {
+      final qStream = FirebaseFirestore.instance
+          .collection('users')
+          .where('email', isEqualTo: email)
+          .limit(1)
+          .snapshots();
+
+      return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+        stream: qStream,
+        builder: (context, snap) {
+          final data = (snap.data?.docs.isNotEmpty ?? false)
+              ? snap.data!.docs.first.data()
+              : <String, dynamic>{};
+          final name   = _pickName(data, email);
+          final role   = _pickRole(data);
+          final office = _pickOffice(data);
+          final inits  = _pickInitials(data, name);
+          return _UserChip(name: name, role: role, office: office, initials: inits);
+        },
+      );
+    } else {
+      return const _UserChip(name: 'User', role: '', office: '', initials: 'U');
+    }
+  }
+
+  static String _pickName(Map<String, dynamic> data, String? email) {
+    final v = (data['userName'] ?? data['name'] ?? email ?? 'User').toString().trim();
+    return v.isEmpty ? 'User' : v;
+  }
+
+  static String _pickRole(Map<String, dynamic> data) {
+    return (data['userRole'] ?? data['role'] ?? '').toString().trim();
+  }
+
+  static String _pickOffice(Map<String, dynamic> data) {
+    return (data['vessel'] ?? data['office'] ?? '').toString().trim();
+  }
+
+  static String _pickInitials(Map<String, dynamic> data, String name) {
+    final saved = (data['initials'] ?? '').toString().trim();
+    if (saved.isNotEmpty) return saved.toUpperCase();
+    final parts = name.trim().split(RegExp(r'\s+'));
+    if (parts.isEmpty) return 'U';
+    final f = parts.first.isNotEmpty ? parts.first[0] : '';
+    final l = parts.length > 1 && parts.last.isNotEmpty ? parts.last[0] : '';
+    final s = (f + l).toUpperCase();
+    return s.isEmpty ? 'U' : s;
+  }
+}
+
+class _UserChip extends StatelessWidget {
+  final String name;
+  final String role;
+  final String office;
+  final String initials;
+
+  const _UserChip({
+    required this.name,
+    required this.role,
+    required this.office,
+    required this.initials,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        // Texto (nome/cargo/escritório) alinhado à direita como no layout atual
+        Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 2),
+            if (role.isNotEmpty)
+              Text(role, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+            if (office.isNotEmpty)
+              Text(office, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+          ],
+        ),
+        const SizedBox(width: 10),
+        _UserAvatar(initials: initials),
+        const SizedBox(width: 8),
+      ],
     );
   }
 }

@@ -44,6 +44,12 @@ class TPRBLandingApp extends StatelessWidget {
         ),
       ),
       home: const LandingPage(),
+      routes: {
+        '/login': (_) => const LoginPage(),
+      },
+      onUnknownRoute: (_) => MaterialPageRoute(
+        builder: (_) => const LoginPage(),
+      ),
     );
   }
 }

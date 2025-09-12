@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
+import 'package:flutter/widgets.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:tprb/widgets/widgets.dart';
 
 /// Página principal do Trainee (Dashboard)
 class TraineeDashboardPage extends StatelessWidget {
@@ -62,62 +65,9 @@ class TraineeDashboardPage extends StatelessWidget {
       length: 5,
       child: Scaffold(
         backgroundColor: const Color(0xFFF3F6FA),
-        appBar: AppBar(
-          elevation: 0,
-          backgroundColor: const Color(0xFFE9EEF6),
-          foregroundColor: Colors.black87,
-          titleSpacing: 0,
-          title: Row(
-            children: [
-              const SizedBox(width: 8),
-              Container(
-                width: 34,
-                height: 34,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF0D2A4E),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                alignment: Alignment.center,
-                child: const Icon(Icons.book, color: Colors.white, size: 20),
-              ),
-              const SizedBox(width: 12),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: const [
-                  Text('TPRB',
-                      style:
-                      TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
-                  Text('Training Performance Record Book',
-                      style: TextStyle(fontSize: 12)),
-                ],
-              ),
-            ],
-          ),
-          actions: [
-            Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(traineeName,
-                    style: const TextStyle(fontWeight: FontWeight.w600)),
-                const SizedBox(height: 2),
-                Text(traineeRole,
-                    style: const TextStyle(fontSize: 11, color: Colors.black54)),
-              ],
-            ),
-            const SizedBox(width: 12),
-            const CircleAvatar(
-              radius: 16,
-              backgroundColor: Color(0xFFDDE6F3),
-              child: Text('AS', style: TextStyle(color: Colors.black87)),
-            ),
-            const SizedBox(width: 8),
-            TextButton.icon(
-              onPressed: () {},
-              icon: const Icon(Icons.logout, size: 18),
-              label: const Text('Logout'),
-            ),
-            const SizedBox(width: 8),
-          ],
+        appBar: CustomTopBar(
+          userId: FirebaseAuth.instance.currentUser?.uid,
+          email: FirebaseAuth.instance.currentUser?.email,
         ),
         body: LayoutBuilder(
           builder: (context, constraints) {
