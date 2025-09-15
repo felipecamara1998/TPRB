@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/widgets.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:tprb/widgets/widgets.dart';
+import 'widgets_trainee.dart';
 
 /// Página principal do Trainee (Dashboard)
 class TraineeDashboardPage extends StatelessWidget {
@@ -10,9 +11,6 @@ class TraineeDashboardPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // ---- Mock de dados (substitua por Firebase depois) ----
-    const traineeName = 'Ana Souza';
-    const traineeRole = 'Deck Cadet • Flumar Brasil';
 
     final chapters = <ChapterProgressModel>[
       ChapterProgressModel('Chapter 1: Safety Basics', 2, 8),
@@ -202,6 +200,12 @@ class TraineeDashboardPage extends StatelessWidget {
                 ),
 
                 const SizedBox(height: 12),
+
+                // Box: My Campaigns (usuário logado)
+                const SizedBox(height: 8),
+                TraineeActiveCampaignsBox(onlyActiveCampaigns: true),
+                const SizedBox(height: 16),
+
 
                 // Chapter Progress
                 _CardShell(
