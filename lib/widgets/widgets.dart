@@ -250,3 +250,248 @@ class _TabWithCount extends StatelessWidget {
 /// Pode trocar por sua própria fonte de dados/Provider.
 Stream<int> countOf(Query query) =>
     query.snapshots().map((s) => s.size);
+
+/* ===================== SUMMARY CARDS FOR OFFICE USER(LIVE) ===================== */
+
+class _Card extends StatelessWidget {
+  final Widget child;
+  const _Card({required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      elevation: 0,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        decoration: BoxDecoration(
+          border: Border.all(color: Colors.grey[300]!),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: child,
+      ),
+    );
+  }
+}
+
+class _SummaryCard extends StatelessWidget {
+  final String title;
+  final String value;
+  final IconData icon;
+  const _SummaryCard({required this.title, required this.value, required this.icon});
+
+  @override
+  Widget build(BuildContext context) {
+    return _Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(color: Colors.blue.withOpacity(.1), borderRadius: BorderRadius.circular(8)),
+              child: Icon(icon, color: Colors.blue),
+            ),
+            const SizedBox(width: 12),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(value, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                const SizedBox(height: 2),
+                Text(title, style: const TextStyle(color: Colors.black54)),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LiveCountCard extends StatefulWidget {
+  final String title;
+  final IconData icon;
+  final Query<Map<String, dynamic>> query;
+
+  const _LiveCountCard({
+    required this.title,
+    required this.icon,
+    required this.query,
+  });
+
+  @override
+  State<_LiveCountCard> createState() => _LiveCountCardState();
+}
+
+class _LiveCountCardState extends State<_LiveCountCard> {
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: widget.query.snapshots(),
+      builder: (context, snap) {
+        if (snap.connectionState == ConnectionState.waiting) {
+          return _SummaryCard(title: widget.title, value: '—', icon: widget.icon);
+        }
+        final count = snap.data?.docs.length ?? 0;
+        return _SummaryCard(title: widget.title, value: '$count', icon: widget.icon);
+      },
+    );
+  }
+}
+
+class _AvgCompletionCard extends StatefulWidget {
+  final String title;
+  final IconData icon;
+  final Query<Map<String, dynamic>> assignmentsQuery;
+
+  const _AvgCompletionCard({
+    required this.title,
+    required this.icon,
+    required this.assignmentsQuery,
+  });
+
+  @override
+  State<_AvgCompletionCard> createState() => _AvgCompletionCardState();
+}
+
+class _AvgCompletionCardState extends State<_AvgCompletionCard> {
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: widget.assignmentsQuery.snapshots(),
+      builder: (context, snap) {
+        if (snap.connectionState == ConnectionState.waiting) {
+          return _SummaryCard(title: widget.title, value: '—', icon: widget.icon);
+        }
+        final docs = snap.data?.docs ?? const [];
+        if (docs.isEmpty) {
+          return _SummaryCard(title: widget.title, value: '0%', icon: widget.icon);
+        }
+        int completed = 0;
+        for (final d in docs) {
+          final s = (d.data()['status'] ?? 'pending').toString();
+          if (s == 'completed') completed++;
+        }
+        final pct = ((completed / docs.length) * 100).round();
+        return _SummaryCard(title: widget.title, value: '$pct%', icon: widget.icon);
+      },
+    );
+  }
+}
+
+class _TotalTasksCard extends StatefulWidget {
+  final String title;
+  final IconData icon;
+  final Query<Map<String, dynamic>> programsQuery;
+
+  const _TotalTasksCard({
+    required this.title,
+    required this.icon,
+    required this.programsQuery,
+  });
+
+  @override
+  State<_TotalTasksCard> createState() => _TotalTasksCardState();
+
+  static int _countTasksDeep(dynamic node) {
+    if (node == null) return 0;
+    if (node is Map) {
+      final map = node as Map;
+      // Se for um "nó tarefa" (possui 'task'), usa qty se houver, senão conta como 1
+      if (map.containsKey('task')) {
+        final qty = map['qty'];
+        if (qty is num) return qty.toInt();
+        return 1;
+      }
+      // Caso contrário, soma recursivamente os filhos
+      int sum = 0;
+      for (final v in map.values) {
+        sum += _countTasksDeep(v);
+      }
+      return sum;
+    }
+    // Qualquer outro tipo não conta
+    return 0;
+  }
+}
+
+class _TotalTasksCardState extends State<_TotalTasksCard> {
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: widget.programsQuery.snapshots(),
+      builder: (context, snap) {
+        if (snap.connectionState == ConnectionState.waiting) {
+          return _SummaryCard(title: widget.title, value: '—', icon: widget.icon);
+        }
+        final docs = snap.data?.docs ?? const [];
+        int totalTasks = 0;
+        for (final d in docs) {
+          totalTasks += _TotalTasksCard._countTasksDeep(d.data()['chapters']);
+        }
+        return _SummaryCard(title: widget.title, value: '$totalTasks', icon: widget.icon);
+      },
+    );
+  }
+}
+
+// == PUBLIC WRAPPERS (expor as versões privadas para outros arquivos) ==
+
+// Expor o _Card
+class CardBox extends StatelessWidget {
+  final Widget child;
+  const CardBox({super.key, required this.child});
+  @override
+  Widget build(BuildContext context) => _Card(child: child);
+}
+
+// Expor _LiveCountCard
+class LiveCountCard extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  final Query<Map<String, dynamic>> query;
+  const LiveCountCard({
+    super.key,
+    required this.title,
+    required this.icon,
+    required this.query,
+  });
+  @override
+  Widget build(BuildContext context) =>
+      _LiveCountCard(title: title, icon: icon, query: query);
+}
+
+// Expor _AvgCompletionCard
+class AvgCompletionCard extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  final Query<Map<String, dynamic>> assignmentsQuery;
+  const AvgCompletionCard({
+    super.key,
+    required this.title,
+    required this.icon,
+    required this.assignmentsQuery,
+  });
+  @override
+  Widget build(BuildContext context) =>
+      _AvgCompletionCard(title: title, icon: icon, assignmentsQuery: assignmentsQuery);
+}
+
+// Expor _TotalTasksCard
+class TotalTasksCard extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  final Query<Map<String, dynamic>> programsQuery;
+  const TotalTasksCard({
+    super.key,
+    required this.title,
+    required this.icon,
+    required this.programsQuery,
+  });
+  @override
+  Widget build(BuildContext context) =>
+      _TotalTasksCard(title: title, icon: icon, programsQuery: programsQuery);
+}
+
+

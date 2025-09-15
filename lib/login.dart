@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:tprb/dashboards/supervisor.dart';
 import 'dashboards/trainee.dart';
 import 'dashboards/admin/admin.dart';
-import 'dashboards/office.dart';
+import 'dashboards/office/office.dart';
 
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
