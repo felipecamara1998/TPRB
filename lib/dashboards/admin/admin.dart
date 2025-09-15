@@ -5,6 +5,7 @@ import 'new_user.dart';
 import 'admin_vessels.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/widgets.dart';
+import 'program_editor_page.dart';
 
 class AdminPage extends StatefulWidget {
   const AdminPage({super.key});
@@ -183,56 +184,106 @@ class _EditionsTab extends StatelessWidget {
           label: 'New Edition',
           icon: Icons.add,
           onPressed: () {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('New Edition tapped')),
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const ProgramEditorPage(programId: null),
+              ),
             );
           },
         ),
       ],
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: const [
-          _EditionItem(
-            version: 'Version 1.0',
-            statusText: 'published',
-            statusColor: Color(0xFF2E7D32),
-            tasksCount: 45,
-            description: 'Initial TPRB edition with all core competencies',
-            created: '14/12/2023',
-            effective: '31/12/2023',
-            author: 'Training Admin',
-            showPublish: false,
-          ),
-          SizedBox(height: 12),
-          _EditionItem(
-            version: 'Version 1.1',
-            statusText: 'draft',
-            statusColor: Color(0xFF455A64),
-            tasksCount: 48,
-            description: 'Added new safety protocols and updated navigation procedures',
-            created: '09/01/2024',
-            effective: '29/02/2024',
-            author: 'Training Admin',
-            showPublish: true,
-          ),
-          SizedBox(height: 16),
-          _ImpactBox(
-            bulletPoints: [
-              '4 active vessels will receive the new edition',
-              '14 trainees will be notified of content updates',
-              '8 officers will need to review mapping changes',
-              'Existing progress will be preserved with migration mapping',
-            ],
-          ),
-          SizedBox(height: 24),
-        ],
-      ),
+        child: StreamBuilder<QuerySnapshot>(
+          stream: FirebaseFirestore.instance.collection('training_programs').snapshots(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snapshot.hasError) {
+              return const Padding(
+                padding: EdgeInsets.all(8.0),
+                child: Text('Error loading editions'),
+              );
+            }
+
+            final docs = snapshot.data?.docs ?? [];
+            if (docs.isEmpty) {
+              return const Padding(
+                padding: EdgeInsets.all(8.0),
+                child: Text('No editions found.'),
+              );
+            }
+
+            int countTasksIn(dynamic node) {
+              int count = 0;
+              if (node is Map) {
+                node.forEach((_, value) {
+                  if (value is Map) {
+                    if (value.containsKey('task')) count += 1;
+                    count += countTasksIn(value);
+                  }
+                });
+              }
+              return count;
+            }
+
+            final items = <Widget>[];
+            for (final d in docs) {
+              final data = (d.data() as Map<String, dynamic>? ?? {});
+              final chapters = (data['chapters'] as Map?)?.cast<String, dynamic>() ?? {};
+              final tasksCount = countTasksIn(chapters);
+
+              final title = (data['title'] ?? 'Untitled').toString();
+              final description = (data['description'] ?? '').toString();
+              final created = (data['dateCreated'] ?? '').toString();
+              final effective = (data['dateOfImplementation'] ?? '').toString();
+              final author = (data['createdBy'] ?? '').toString();
+              final version = (data['version'] ?? '').toString();
+              final docID = (data['docID'] ?? '').toString();
+
+              final statusRaw = (data['status'] ?? 'published').toString().toLowerCase();
+              final isPublished = statusRaw == 'published' || statusRaw == 'active';
+              final statusColor = isPublished ? const Color(0xFF2E7D32) : const Color(0xFF455A64);
+
+              items.add(_EditionItem(
+                title: title, // usa 'title' do Firestore
+                statusText: isPublished ? 'published' : 'draft',
+                statusColor: statusColor,
+                tasksCount: tasksCount,
+                description: description,
+                created: created,
+                effective: effective,
+                author: author,
+                showPublish: !isPublished,
+                version: version,
+                docId: docID,
+              ));
+              items.add(const SizedBox(height: 16));
+            }
+
+            // Mantém o bloco de impacto (como no seu layout original)
+            items.add(const _ImpactBox(
+              bulletPoints: [
+                '4 active vessels will receive the new edition',
+                '14 trainees will be notified of content updates',
+                '8 officers will need to review mapping changes',
+                'Existing progress will be preserved with migration mapping',
+              ],
+            ));
+            items.add(const SizedBox(height: 24));
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: items,
+            );
+          },
+        )
     );
   }
 }
 
 class _EditionItem extends StatelessWidget {
-  final String version;
+  final String title;
   final String statusText;
   final Color statusColor;
   final int tasksCount;
@@ -241,9 +292,11 @@ class _EditionItem extends StatelessWidget {
   final String effective;
   final String author;
   final bool showPublish;
+  final String version;
+  final String docId;
 
   const _EditionItem({
-    required this.version,
+    required this.title,
     required this.statusText,
     required this.statusColor,
     required this.tasksCount,
@@ -252,6 +305,8 @@ class _EditionItem extends StatelessWidget {
     required this.effective,
     required this.author,
     required this.showPublish,
+    required this.version,
+    required this.docId,
   });
 
   @override
@@ -270,14 +325,21 @@ class _EditionItem extends StatelessWidget {
           // header
           Row(
             children: [
-              Text(version,
+              Text(title,
                   style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
               const SizedBox(width: 8),
               _statusChip(statusText, statusColor),
               const SizedBox(width: 8),
               _countChip('$tasksCount tasks'),
               const Spacer(),
-              _ghostButton('Edit', Icons.edit, onTap: () {}),
+              _ghostButton('Edit', Icons.edit, onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => ProgramEditorPage(programId: docId),
+                  ),
+                );
+              }),
               const SizedBox(width: 8),
               _ghostButton('Clone', Icons.copy_all_outlined, onTap: () {}),
               const SizedBox(width: 8),
