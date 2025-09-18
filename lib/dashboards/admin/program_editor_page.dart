@@ -26,13 +26,33 @@ class _ProgramEditorPageState extends State<ProgramEditorPage> {
   final _createdByCtrl = TextEditingController();
   final _dateCreatedCtrl = TextEditingController();
   final _dateImplCtrl = TextEditingController();
-  final _statusCtrl = TextEditingController(text: 'published');
+  final _statusCtrl = TextEditingController(text: 'draft');
+
+  String? _cachedProgramId;
+  bool _programIdLocked = false;
 
   DocumentReference<Map<String, dynamic>> get _doc {
     final col = FirebaseFirestore.instance.collection(_kProgramsCol);
-    if (widget.programId != null) return col.doc(widget.programId);
-    final id = (_idCtrl.text.trim().isEmpty) ? null : _idCtrl.text.trim();
-    return id == null ? col.doc() : col.doc(id);
+
+    // 1) Se veio em widget, use-o
+    if (widget.programId != null && widget.programId!.isNotEmpty) {
+      return col.doc(widget.programId);
+    }
+
+    // 2) Se o usuário digitou, use o digitado
+    final typed = _idCtrl.text.trim();
+    if (typed.isNotEmpty) {
+      _cachedProgramId = typed; // sincroniza cache
+      return col.doc(typed);
+    }
+
+    // 3) Caso contrário, gere UMA vez e reutilize
+    _cachedProgramId ??= col.doc().id; // <-- gera só 1x
+    if (_idCtrl.text.isEmpty) {
+      _idCtrl.text = _cachedProgramId!; // preenche o campo para o usuário ver
+      // não chame setState aqui (getter); trave no botão (abaixo)
+    }
+    return col.doc(_cachedProgramId);
   }
 
   @override
@@ -63,14 +83,25 @@ class _ProgramEditorPageState extends State<ProgramEditorPage> {
     setState(() {});
   }
 
+  void _materializeAndLockProgramId() {
+    // força materializar o _doc (se o campo estiver vazio, o getter preenche _idCtrl)
+    final _ = _doc;
+    if (!_programIdLocked) {
+      setState(() => _programIdLocked = true); // desabilita edição do Program ID
+    }
+  }
+
   Future<void> _saveProgram() async {
     if (!_formKey.currentState!.validate()) return;
+
+    _materializeAndLockProgramId();
 
     final ref = _doc;
     final isNew = widget.programId == null;
 
     final payload = <String, dynamic>{
-      'title': _titleCtrl.text.trim(),                 // <- admin shows as "version"
+      'docID': _idCtrl.text.trim(),
+      'title': _titleCtrl.text.trim(),
       'description': _descCtrl.text.trim(),
       'createdBy': _createdByCtrl.text.trim(),
       'dateCreated': _dateCreatedCtrl.text.trim(),
@@ -111,6 +142,8 @@ class _ProgramEditorPageState extends State<ProgramEditorPage> {
   Future<void> _addChapter() async {
     final chapterNo = await _promptText(context, title: 'Add chapter', label: 'Chapter number (e.g. 1, 2, 3)');
     if (chapterNo == null || chapterNo.trim().isEmpty) return;
+
+    _materializeAndLockProgramId();
 
     await _doc.set({
       'chapters': { chapterNo.trim(): {} }
@@ -215,9 +248,11 @@ class _ProgramEditorPageState extends State<ProgramEditorPage> {
                 if (!isEditing)
                   TextFormField(
                     controller: _idCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Program ID (optional)',
-                      hintText: 'e.g. tprb3 (leave empty for auto-ID)',
+                    enabled: !_programIdLocked,
+                    readOnly: _programIdLocked,
+                    decoration: InputDecoration(
+                      labelText: 'Program ID',
+                      suffixIcon: Icon(_programIdLocked ? Icons.lock_outline : Icons.lock_open),
                     ),
                   ),
                 TextFormField(
