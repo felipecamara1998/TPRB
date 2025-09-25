@@ -4,6 +4,12 @@ import 'package:flutter/widgets.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:tprb/widgets/widgets.dart';
 import 'widgets_trainee.dart';
+import 'widgets_task_completion.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+const String _kUsersCol = 'users';
+const String _kProgramsCol = 'training_programs';
+const String _kTaskDeclSubcol = 'task_declarations';
 
 /// Página principal do Trainee (Dashboard)
 class TraineeDashboardPage extends StatelessWidget {
@@ -11,7 +17,6 @@ class TraineeDashboardPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-
     final chapters = <ChapterProgressModel>[
       ChapterProgressModel('Chapter 1: Safety Basics', 2, 8),
       ChapterProgressModel('Chapter 2: Navigation', 0, 12),
@@ -50,8 +55,9 @@ class TraineeDashboardPage extends StatelessWidget {
     ];
 
     final approved = tasks.where((t) => t.status == TaskStatus.approved).length;
-    final submitted =
-        tasks.where((t) => t.status == TaskStatus.submitted).length;
+    final submitted = tasks
+        .where((t) => t.status == TaskStatus.submitted)
+        .length;
     final returned = tasks.where((t) => t.status == TaskStatus.returned).length;
     final pending = tasks.where((t) => t.status == TaskStatus.pending).length;
 
@@ -70,16 +76,16 @@ class TraineeDashboardPage extends StatelessWidget {
         body: LayoutBuilder(
           builder: (context, constraints) {
             final isWide = constraints.maxWidth >= 900;
+            final uid = FirebaseAuth.instance.currentUser?.uid;
 
             return ListView(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
               children: [
                 Text(
                   'Training Dashboard',
-                  style: Theme.of(context)
-                      .textTheme
-                      .headlineMedium
-                      ?.copyWith(fontWeight: FontWeight.w800),
+                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
                 const SizedBox(height: 16),
 
@@ -94,19 +100,20 @@ class TraineeDashboardPage extends StatelessWidget {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const _SectionTitle(
-                                icon: Icons.stacked_bar_chart_rounded,
-                                title: 'Overall Progress'
-                              ),
                               const SizedBox(height: 12),
                               Center(
-                                child: _DonutProgress(
-                                  percent: overallPct,
-                                  label: '',
-                                  size: 150,         // ↑ maior
-                                  strokeWidth: 16,   // ↑ mais grosso
-                                  // progressColor: Color(0xFFEF4444), // já é o default
-                                ),
+                                child: (uid == null)
+                                    ? _DonutProgress(
+                                        percent: 0,
+                                        label: '',
+                                        size: 150,
+                                        strokeWidth: 16,
+                                      )
+                                    : OverallDonutProgress(
+                                        userId: uid,
+                                        size: 150,
+                                        strokeWidth: 16,
+                                      ),
                               ),
                             ],
                           ),
@@ -154,7 +161,7 @@ class TraineeDashboardPage extends StatelessWidget {
                                     color: Colors.blue.shade700,
                                   ),
                                 ],
-                              )
+                              ),
                             ],
                           ),
                         ),
@@ -175,20 +182,42 @@ class TraineeDashboardPage extends StatelessWidget {
                               SizedBox(
                                 width: double.infinity,
                                 child: FilledButton.icon(
-                                  onPressed: () {},
+                                  onPressed: () {
+                                    final uid =
+                                        FirebaseAuth.instance.currentUser?.uid;
+                                    if (uid == null) {
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        const SnackBar(
+                                          content: Text(
+                                            'You must be logged in.',
+                                          ),
+                                        ),
+                                      );
+                                      return;
+                                    }
+                                    showTaskCompletionPicker(
+                                      context: context,
+                                      userId: uid,
+                                    );
+                                  },
                                   icon: const Icon(Icons.add),
-                                  label:
-                                  const Text('Log New Task Completion'),
+                                  label: const Text('Log New Task Completion'),
                                   style: FilledButton.styleFrom(
                                     padding: const EdgeInsets.symmetric(
-                                        vertical: 14),
-                                    backgroundColor:
-                                    const Color(0xFF3B5CAA), // azul mais próximo do mock
+                                      vertical: 14,
+                                    ),
+                                    backgroundColor: const Color(
+                                      0xFF3B5CAA,
+                                    ), // azul mais próximo do mock
                                   ),
                                 ),
                               ),
                               const SizedBox(height: 12),
-                              const _Bullet('Complete pending tasks from Chapter 1'),
+                              const _Bullet(
+                                'Complete pending tasks from Chapter 1',
+                              ),
                               const _Bullet('Review returned submissions'),
                               const _Bullet('Start Chapter 2 preparations'),
                             ],
@@ -206,7 +235,6 @@ class TraineeDashboardPage extends StatelessWidget {
                 TraineeActiveCampaignsBox(onlyActiveCampaigns: true),
                 const SizedBox(height: 16),
 
-
                 // Chapter Progress
                 _CardShell(
                   child: Padding(
@@ -218,7 +246,7 @@ class TraineeDashboardPage extends StatelessWidget {
                           icon: Icons.menu_book_outlined,
                           title: 'Chapter Progress',
                           subtitleRight:
-                          'Your advancement through each training chapter',
+                              'Your advancement through each training chapter',
                         ),
                         const SizedBox(height: 12),
                         for (final ch in chapters) ...[
@@ -243,7 +271,7 @@ class TraineeDashboardPage extends StatelessWidget {
                           icon: Icons.tune,
                           title: 'My Tasks',
                           subtitleRight:
-                          'Track and manage your task submissions',
+                              'Track and manage your task submissions',
                         ),
                         const SizedBox(height: 6),
                         TabBar(
@@ -266,25 +294,33 @@ class TraineeDashboardPage extends StatelessWidget {
                             children: [
                               _TaskList(tasks: tasks),
                               _TaskList(
-                                  tasks: tasks
-                                      .where((t) =>
-                                  t.status == TaskStatus.pending)
-                                      .toList()),
+                                tasks: tasks
+                                    .where(
+                                      (t) => t.status == TaskStatus.pending,
+                                    )
+                                    .toList(),
+                              ),
                               _TaskList(
-                                  tasks: tasks
-                                      .where((t) =>
-                                  t.status == TaskStatus.submitted)
-                                      .toList()),
+                                tasks: tasks
+                                    .where(
+                                      (t) => t.status == TaskStatus.submitted,
+                                    )
+                                    .toList(),
+                              ),
                               _TaskList(
-                                  tasks: tasks
-                                      .where((t) =>
-                                  t.status == TaskStatus.approved)
-                                      .toList()),
+                                tasks: tasks
+                                    .where(
+                                      (t) => t.status == TaskStatus.approved,
+                                    )
+                                    .toList(),
+                              ),
                               _TaskList(
-                                  tasks: tasks
-                                      .where((t) =>
-                                  t.status == TaskStatus.returned)
-                                      .toList()),
+                                tasks: tasks
+                                    .where(
+                                      (t) => t.status == TaskStatus.returned,
+                                    )
+                                    .toList(),
+                              ),
                             ],
                           ),
                         ),
@@ -373,10 +409,9 @@ class _SectionTitle extends StatelessWidget {
           child: Text(
             title,
             overflow: TextOverflow.ellipsis,
-            style: Theme.of(context)
-                .textTheme
-                .titleLarge
-                ?.copyWith(fontWeight: FontWeight.w800),
+            style: Theme.of(
+              context,
+            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
           ),
         ),
 
@@ -392,10 +427,9 @@ class _SectionTitle extends StatelessWidget {
                 maxLines: 1,
                 softWrap: false,
                 overflow: TextOverflow.ellipsis,
-                style: Theme.of(context)
-                    .textTheme
-                    .bodySmall
-                    ?.copyWith(color: Colors.black45),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: Colors.black45),
               ),
             ),
           ),
@@ -409,16 +443,15 @@ class _SectionTitle extends StatelessWidget {
 class _UnderlineIndicator extends Decoration {
   const _UnderlineIndicator();
   @override
-  BoxPainter createBoxPainter([VoidCallback? onChanged]) =>
-      _UnderlinePainter();
+  BoxPainter createBoxPainter([VoidCallback? onChanged]) => _UnderlinePainter();
 }
 
 class _UnderlinePainter extends BoxPainter {
   @override
   void paint(Canvas canvas, Offset offset, ImageConfiguration cfg) {
     if (cfg.size == null) return;
-    final rect = Offset(offset.dx, cfg.size!.height - 3) &
-    Size(cfg.size!.width, 3);
+    final rect =
+        Offset(offset.dx, cfg.size!.height - 3) & Size(cfg.size!.width, 3);
     final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(2));
     final paint = Paint()..color = const Color(0xFF3B82F6);
     canvas.drawRRect(rrect, paint);
@@ -439,31 +472,217 @@ class _ResponsiveRow extends StatelessWidget {
           for (int i = 0; i < children.length; i++) ...[
             Flexible(flex: 1, child: children[i]),
             if (i != children.length - 1) const SizedBox(width: 12),
-          ]
+          ],
         ],
       );
     }
     return Column(
       children: [
-        for (final c in children) ...[
-          c,
-          const SizedBox(height: 12),
-        ]
+        for (final c in children) ...[c, const SizedBox(height: 12)],
       ],
     );
   }
 }
 
+class OverallDonutProgress extends StatelessWidget {
+  const OverallDonutProgress({
+    super.key,
+    this.userId,
+    this.size = 150,
+    this.strokeWidth = 16,
+    this.debug = true,
+  });
+
+  final String? userId;
+  final double size;
+  final double strokeWidth;
+  final bool debug;
+
+  void _log(Object msg) {
+    if (debug) print('[OverallDonutProgress] $msg');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final uid = userId ?? FirebaseAuth.instance.currentUser?.uid;
+    _log('uid = $uid');
+    if (uid == null) {
+      _log('Sem usuário logado → percent=0');
+      return _DonutProgress(percent: 0, label: '', size: size, strokeWidth: strokeWidth);
+    }
+
+    final userRef = FirebaseFirestore.instance.collection('users').doc(uid);
+
+    // 1) Ouve assignments do usuário (users/{uid}.programs)
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: userRef.snapshots(),
+      builder: (context, usnap) {
+        if (!usnap.hasData || !usnap.data!.exists) {
+          _log('Doc users/$uid não existe ou sem dados.');
+          return _DonutProgress(percent: 0, label: '', size: size, strokeWidth: strokeWidth);
+        }
+
+        final root = usnap.data!.data() ?? {};
+        final programsMap = (root['programs'] ?? {}) as Map<String, dynamic>;
+        _log('programs (keys) = ${programsMap.keys.toList()}');
+
+        if (programsMap.isEmpty) {
+          _log('Usuário sem programs → percent=0');
+          return _DonutProgress(percent: 0, label: '', size: size, strokeWidth: strokeWidth);
+        }
+
+        // Lista de (programId, campaignId?)
+        final assignments = <({String programId, String? campaignId})>[];
+        programsMap.forEach((pid, raw) {
+          String? campaignId;
+          if (raw is Map) {
+            final meta = raw.map((k, v) => MapEntry(k.toString(), v));
+            final cid = (meta['campaignId'] ?? meta['campaignID'] ?? '').toString();
+            if (cid.isNotEmpty) campaignId = cid;
+          }
+          assignments.add((programId: pid.toString(), campaignId: campaignId));
+        });
+        _log('assignments = ${assignments.map((a) => '{p:${a.programId}, c:${a.campaignId}}').toList()}');
+
+        // 2) Denominador: soma do nº de tasks por assignment
+        return FutureBuilder<int>(
+          future: _sumTotalTasks(assignments),
+          builder: (context, totalSnap) {
+            final total = totalSnap.data ?? 0;
+            _log('TOTAL tasks (somando por assignment) = $total');
+
+            // 3) Numerador: declarações do usuário (filtro por programId)
+            return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+              stream: userRef.collection('task_declarations').snapshots(),
+              builder: (context, dsnap) {
+                int done = 0;
+                if (dsnap.hasData) {
+                  final declared = dsnap.data!.docs.map((d) => d.data()).toList();
+                  _log('declared docs = ${declared.length}');
+
+                  final assignedPrograms =
+                  assignments.map((a) => a.programId).toSet();
+                  _log('assignedPrograms = $assignedPrograms');
+
+                  for (final m in declared) {
+                    final pid = (m['programId'] ?? '').toString();
+                    final cid = (m['campaignId'] ?? '').toString();
+                    if (assignedPrograms.contains(pid)) {
+                      done++;
+                      _log('✔ conta: decl {programId=$pid, campaignId=$cid}');
+                    } else {
+                      _log('✖ ignora: decl {programId=$pid, campaignId=$cid} (não atribuído)');
+                    }
+                  }
+                } else {
+                  _log('Sem snapshot de declarações ainda.');
+                }
+
+                final percent = (total == 0) ? 0.0 : (done / total).clamp(0.0, 1.0);
+                _log('done=$done, total=$total → percent=${(percent * 100).toStringAsFixed(1)}%');
+
+                return _DonutProgress(
+                  percent: percent,
+                  label: '',
+                  size: size,
+                  strokeWidth: strokeWidth,
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  /// Lê cada training_program e conta tasks:
+  /// chapters: { "1": { "1.1": {task, qty}, "1.2": {...} }, "2": {...} }
+  /// Conta 1 por cada entrada "x.y" cujo valor seja Map (tarefa).
+  Future<int> _sumTotalTasks(List<({String programId, String? campaignId})> assigns) async {
+    if (assigns.isEmpty) return 0;
+
+    final cache = <String, int>{};
+
+    Future<int> countForProgram(String programId) async {
+      if (cache.containsKey(programId)) {
+        _log('cache hit: $programId → ${cache[programId]}');
+        return cache[programId]!;
+      }
+
+      try {
+        _log('Lendo training_programs/$programId ...');
+        final doc = await FirebaseFirestore.instance
+            .collection('training_programs')
+            .doc(programId)
+            .get();
+
+        if (!doc.exists) {
+          _log('⚠ training_programs/$programId NÃO encontrado.');
+          cache[programId] = 0;
+          return 0;
+        }
+
+        final m = doc.data() ?? {};
+        final chapters = m['chapters'];
+        if (chapters is! Map) {
+          _log('⚠ chapters ausente ou não-Map em $programId → ${chapters.runtimeType}');
+          cache[programId] = 0;
+          return 0;
+        }
+
+        int total = 0;
+        (chapters as Map).forEach((chKey, tasksMap) {
+          if (tasksMap is Map) {
+            int chapterCount = 0;
+            (tasksMap as Map).forEach((taskKey, v) {
+              if (v is Map) {
+                chapterCount += 1;
+              } else {
+                _log('• ignora task $taskKey em chapter $chKey (tipo ${v.runtimeType})');
+              }
+            });
+            total += chapterCount;
+            _log('program=$programId chapter=$chKey → tasks=$chapterCount');
+          } else {
+            _log('• ignora chapter $chKey (tipo ${tasksMap.runtimeType})');
+          }
+        });
+
+        cache[programId] = total;
+        _log('program=$programId → totalTasks=$total');
+        return total;
+      } catch (e, st) {
+        _log('❌ erro ao ler $programId: $e');
+        _log(st);
+        cache[programId] = 0;
+        return 0;
+      }
+    }
+
+    int sum = 0;
+    for (final a in assigns) {
+      final n = await countForProgram(a.programId);
+      sum += n; // soma por assignment
+      _log('assignment {p:${a.programId}, c:${a.campaignId}} contribui $n (acumulado=$sum)');
+    }
+    _log('Soma final (por assignment) = $sum');
+    return sum;
+  }
+}
+
 class _DonutProgress extends StatelessWidget {
-  final double percent;              // 0..1
+  final String? userId;
+  final double percent; // 0..1
   final String label;
-  final double size;                 // diâmetro
-  final double strokeWidth;          // espessura do anel
+  final double size; // diâmetro
+  final double strokeWidth; // espessura do anel
   final Color backgroundColor;
   final Color progressColor;
-  final double minSweepDegrees;      // ângulo mínimo para não “sumir” em % muito baixo
+  final double
+  minSweepDegrees; // ângulo mínimo para não “sumir” em % muito baixo
 
   const _DonutProgress({
+    this.userId,
     required this.percent,
     required this.label,
     this.size = 190,
@@ -507,10 +726,9 @@ class _DonutProgress extends StatelessWidget {
               const SizedBox(height: 4),
               Text(
                 'Complete',
-                style: Theme.of(context)
-                    .textTheme
-                    .labelLarge
-                    ?.copyWith(color: Colors.black45),
+                style: Theme.of(
+                  context,
+                ).textTheme.labelLarge?.copyWith(color: Colors.black45),
               ),
             ],
           ),
@@ -546,7 +764,13 @@ class _DonutPainter extends CustomPainter {
       ..strokeWidth = strokeWidth
       ..strokeCap = StrokeCap.round
       ..color = bg;
-    canvas.drawArc(rect.deflate(strokeWidth / 2), 0, 2 * math.pi, false, bgPaint);
+    canvas.drawArc(
+      rect.deflate(strokeWidth / 2),
+      0,
+      2 * math.pi,
+      false,
+      bgPaint,
+    );
 
     // Progresso (começa no topo)
     if (pct > 0) {
@@ -558,17 +782,22 @@ class _DonutPainter extends CustomPainter {
         ..strokeCap = StrokeCap.round
         ..color = fg;
       // -pi/2 = 12h
-      canvas.drawArc(rect.deflate(strokeWidth / 2), -math.pi / 2,
-          math.min(sweep, 2 * math.pi - 0.01), false, fgPaint);
+      canvas.drawArc(
+        rect.deflate(strokeWidth / 2),
+        -math.pi / 2,
+        math.min(sweep, 2 * math.pi - 0.01),
+        false,
+        fgPaint,
+      );
     }
   }
 
   @override
   bool shouldRepaint(covariant _DonutPainter oldDelegate) =>
       oldDelegate.pct != pct ||
-          oldDelegate.strokeWidth != strokeWidth ||
-          oldDelegate.bg != bg ||
-          oldDelegate.fg != fg;
+      oldDelegate.strokeWidth != strokeWidth ||
+      oldDelegate.bg != bg ||
+      oldDelegate.fg != fg;
 }
 
 class _StatPill extends StatelessWidget {
@@ -577,11 +806,12 @@ class _StatPill extends StatelessWidget {
   final int value;
   final Color color;
 
-  const _StatPill(
-      {required this.icon,
-        required this.label,
-        required this.value,
-        required this.color});
+  const _StatPill({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.color,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -597,9 +827,13 @@ class _StatPill extends StatelessWidget {
         children: [
           Icon(icon, size: 18, color: color),
           const SizedBox(width: 8),
-          Text(label,
-              style:
-              const TextStyle(color: Colors.black87, fontWeight: FontWeight.w600)),
+          Text(
+            label,
+            style: const TextStyle(
+              color: Colors.black87,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
           const SizedBox(width: 8),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -607,10 +841,7 @@ class _StatPill extends StatelessWidget {
               color: color,
               borderRadius: BorderRadius.circular(999),
             ),
-            child: Text(
-              '$value',
-              style: const TextStyle(color: Colors.white),
-            ),
+            child: Text('$value', style: const TextStyle(color: Colors.white)),
           ),
         ],
       ),
@@ -649,9 +880,9 @@ class _ChapterProgressRow extends StatelessWidget {
       children: [
         Text(
           model.title,
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.w700,
-          ),
+          style: Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
         ),
         const SizedBox(height: 6),
         ClipRRect(
@@ -664,11 +895,12 @@ class _ChapterProgressRow extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 4),
-        Text('${model.done} / ${model.total}',
-            style: Theme.of(context)
-                .textTheme
-                .bodySmall
-                ?.copyWith(color: Colors.black45)),
+        Text(
+          '${model.done} / ${model.total}',
+          style: Theme.of(
+            context,
+          ).textTheme.bodySmall?.copyWith(color: Colors.black45),
+        ),
       ],
     );
   }
@@ -716,17 +948,19 @@ class _TaskTile extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(task.title,
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleMedium
-                        ?.copyWith(fontWeight: FontWeight.w700)),
+                Text(
+                  task.title,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
                 const SizedBox(height: 4),
-                Text(task.chapter,
-                    style: Theme.of(context)
-                        .textTheme
-                        .bodySmall
-                        ?.copyWith(color: Colors.black54)),
+                Text(
+                  task.chapter,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: Colors.black54),
+                ),
                 const SizedBox(height: 8),
                 Row(
                   children: [
@@ -735,13 +969,12 @@ class _TaskTile extends StatelessWidget {
                     if (task.submittedAt != null)
                       Text(
                         'Submitted: ${_fmtDate(task.submittedAt!)}',
-                        style: Theme.of(context)
-                            .textTheme
-                            .bodySmall
-                            ?.copyWith(color: Colors.black54),
+                        style: Theme.of(
+                          context,
+                        ).textTheme.bodySmall?.copyWith(color: Colors.black54),
                       ),
                   ],
-                )
+                ),
               ],
             ),
           ),
@@ -751,12 +984,9 @@ class _TaskTile extends StatelessWidget {
             children: [
               if (trailing != null) trailing,
               const SizedBox(height: 8),
-              TextButton(
-                onPressed: () {},
-                child: const Text('View Details'),
-              ),
+              TextButton(onPressed: () {}, child: const Text('View Details')),
             ],
-          )
+          ),
         ],
       ),
     );
@@ -823,8 +1053,10 @@ class _TaskTile extends StatelessWidget {
         children: [
           Icon(Icons.circle, size: 8, color: color),
           const SizedBox(width: 6),
-          Text(label,
-              style: TextStyle(color: color, fontWeight: FontWeight.w700)),
+          Text(
+            label,
+            style: TextStyle(color: color, fontWeight: FontWeight.w700),
+          ),
         ],
       ),
     );
@@ -846,10 +1078,7 @@ class _NumberBadge extends StatelessWidget {
         borderRadius: BorderRadius.circular(999),
         border: Border.all(color: const Color(0xFFE0E6F0)),
       ),
-      child: Text(
-        text,
-        style: const TextStyle(fontWeight: FontWeight.w800),
-      ),
+      child: Text(text, style: const TextStyle(fontWeight: FontWeight.w800)),
     );
   }
 }

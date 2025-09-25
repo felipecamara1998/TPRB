@@ -1,6 +1,114 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'program_tasks_page.dart';
+
+const String _kUsersCol = 'users';
+const String _kProgramCol = 'training_programs';
+const String _kTaskDeclSubcol = 'task_declarations';
+
+// =======================  UI (estilo do seu card) =======================
+
+class _OverallCard extends StatelessWidget {
+  const _OverallCard({
+    required this.progress,
+    required this.done,
+    required this.total,
+  });
+
+  final double progress;
+  final int done;
+  final int total;
+
+  @override
+  Widget build(BuildContext context) {
+    final pct = (progress * 100).toStringAsFixed(0);
+    return Card(
+      elevation: 0.5,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            // Donut
+            SizedBox(
+              width: 140,
+              height: 140,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  SizedBox(
+                    width: 120,
+                    height: 120,
+                    child: CircularProgressIndicator(
+                      value: progress,
+                      strokeWidth: 10,
+                    ),
+                  ),
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('$pct%', style: Theme.of(context).textTheme.titleLarge),
+                      const SizedBox(height: 2),
+                      Text('Complete',
+                          style: Theme.of(context)
+                              .textTheme
+                              .labelMedium
+                              ?.copyWith(color: Colors.black54)),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 16),
+            // Texto
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(children: [
+                    const Icon(Icons.insights_outlined),
+                    const SizedBox(width: 8),
+                    Text('Overall Progress',
+                        style: Theme.of(context).textTheme.titleMedium),
+                  ]),
+                  const SizedBox(height: 8),
+                  Text('$done of $total tasks declared',
+                      style: Theme.of(context)
+                          .textTheme
+                          .labelLarge),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Across all campaigns assigned to you',
+                    style: Theme.of(context)
+                        .textTheme
+                        .labelMedium
+                        ?.copyWith(color: Colors.black54),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class OverallSkeleton extends StatelessWidget {
+  const OverallSkeleton();
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 0.5,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: const SizedBox(
+        height: 180,
+        child: Center(child: CircularProgressIndicator()),
+      ),
+    );
+  }
+}
 
 /// Box que lista as campanhas destinadas ao usuário logado.
 /// Por padrão, mostra apenas campanhas com `campaign.status == 'active'`.
@@ -289,9 +397,36 @@ class _CampaignTile extends StatelessWidget {
         // Botão
         TextButton.icon(
           onPressed: () {
-            // TODO: navegação para a tela do programa/campanha (quando existir)
+            final uid = FirebaseAuth.instance.currentUser?.uid;
+            if (uid == null) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('You must be logged in.')),
+              );
+              return;
+            }
+
+            final pid = (row.programId ?? '').toString();
+            if (pid.isEmpty) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('This campaign has no linked program.')),
+              );
+              return;
+            }
+
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => ProgramTasksPage(
+                  userId: uid,
+                  programId: pid,
+                  campaignId: row.campaignId,                 // pode ser null
+                  programTitle: row.programTitle ?? 'Program $pid',
+                  campaignName: row.campaignName,             // pode ser null
+                ),
+              ),
+            );
           },
-          icon: const Icon(Icons.open_in_new),
+          icon: const Icon(Icons.open_in_new, size: 18),
           label: const Text('Open'),
         ),
       ],

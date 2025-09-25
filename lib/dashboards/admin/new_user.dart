@@ -5,6 +5,18 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'package:tprb/firebase_options.dart'; // ajuste "tprb" se o name do seu pacote for diferente
 
+class _Vessel {
+  final String id;
+  final String name;
+  const _Vessel(this.id, this.name);
+}
+
+// estado
+Future<List<_Vessel>>? _vesselsFuture;
+String? _selectedVesselId;
+String? _selectedVesselName;
+
+
 /// Reuso de um app secundário para criar usuários sem afetar a sessão atual (evita 'channel-error').
 class _SecondaryAuth {
   static FirebaseApp? _app;
@@ -37,6 +49,54 @@ class _NewUserPageState extends State<NewUserPage> {
   final _emailCtrl = TextEditingController();
   String _selectedRole = _roles.first;
   bool _busy = false;
+  String? _vessel;
+  final _nameCtrl = TextEditingController();   // userName
+  String? _userRole;                           // userRole
+
+// (opcional) opções de cargo para o dropdown
+  final List<String> _possibleRoles = const [
+    'Deck Cadet',
+    'Third Officer',
+    'SecondOfficer',
+    'Chief Officer',
+    'Captain',
+    'Engine Cadet',
+    'Third Engineer',
+    'Second Engineer',
+    'Chief Engineer',
+    'Bosun',
+    'A/B',
+    'O/S',
+    'Motorman',
+    'Fitter',
+    'Oiler',
+    'Pumpman',
+    'Electrician',
+    'Nurse',
+    'Messman',
+    'Cook',
+    'Marine Superintendent',
+    'Technical Superintendent',
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _vesselsFuture = _fetchVessels();
+  }
+
+  Future<List<_Vessel>> _fetchVessels() async {
+    final qs = await FirebaseFirestore.instance
+        .collection('vessels')
+        .orderBy('name') // cada doc tem { name: "Bow Aquarius" }
+        .get();
+
+    return qs.docs.map((d) {
+      final m = d.data();
+      final name = (m['name'] ?? d.id).toString();
+      return _Vessel(d.id, name);
+    }).toList();
+  }
 
   static const List<String> _roles = ['Trainee', 'Supervisor', 'Office', 'Admin'];
 
@@ -45,6 +105,15 @@ class _NewUserPageState extends State<NewUserPage> {
     _emailCtrl.dispose();
     super.dispose();
   }
+
+  String initialsFromName(String name) {
+    final parts = name.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
+    if (parts.isEmpty) return '';
+    final first = parts.first[0];
+    final second = parts.length > 1 ? parts.last[0] : '';
+    return (first + second).toUpperCase();
+  }
+
 
   Future<void> _createUser() async {
     final valid = _formKey.currentState?.validate() ?? false;
@@ -163,9 +232,9 @@ class _NewUserPageState extends State<NewUserPage> {
                   ),
                   const SizedBox(height: 12),
 
-                  // Role
+                  // User Type
                   InputDecorator(
-                    decoration: const InputDecoration(labelText: 'Role', border: OutlineInputBorder()),
+                    decoration: const InputDecoration(labelText: 'User type', border: OutlineInputBorder()),
                     child: DropdownButtonHideUnderline(
                       child: DropdownButton<String>(
                         value: _selectedRole,
@@ -175,6 +244,67 @@ class _NewUserPageState extends State<NewUserPage> {
                       ),
                     ),
                   ),
+                  const SizedBox(height: 12),
+
+                  // Nome
+                  TextFormField(
+                    controller: _nameCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Name',
+                      hintText: 'Ex.: Felipe Camara',
+                    ),
+                    validator: (v) => (v == null || v.trim().isEmpty) ? 'Enter a name' : null,
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  FutureBuilder<List<_Vessel>>(
+                    future: _vesselsFuture,
+                    builder: (context, snap) {
+                      if (snap.connectionState == ConnectionState.waiting) {
+                        return const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 8),
+                          child: LinearProgressIndicator(),
+                        );
+                      }
+                      final vessels = snap.data ?? const <_Vessel>[];
+                      if (vessels.isEmpty) {
+                        return const Text('No vessels found');
+                      }
+                      return DropdownButtonFormField<String>(
+                        value: _selectedVesselId,
+                        items: vessels
+                            .map((v) => DropdownMenuItem(
+                          value: v.id,
+                          child: Text(v.name),
+                        ))
+                            .toList(),
+                        onChanged: (val) {
+                          setState(() {
+                            _selectedVesselId = val;
+                            _selectedVesselName =
+                                vessels.firstWhere((v) => v.id == val).name;
+                          });
+                        },
+                        decoration: const InputDecoration(
+                          labelText: 'Vessel',
+                        ),
+                        validator: (v) => v == null ? 'Select a vessel' : null,
+                      );
+                    },
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  // Role
+                  DropdownButtonFormField<String>(
+                    value: _userRole,
+                    items: _possibleRoles.map((r) => DropdownMenuItem(value: r, child: Text(r))).toList(),
+                    onChanged: (v) => setState(() => _userRole = v),
+                    decoration: const InputDecoration(labelText: 'Role'),
+                    validator: (v) => v == null ? 'Select a role' : null,
+                  ),
+
                   const SizedBox(height: 12),
 
                   // Info senha

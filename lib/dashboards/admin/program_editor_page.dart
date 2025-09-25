@@ -258,7 +258,7 @@ class _ProgramEditorPageState extends State<ProgramEditorPage> {
                 TextFormField(
                   controller: _titleCtrl,
                   decoration: const InputDecoration(
-                    labelText: 'Title (shown as "version" in admin list)',
+                    labelText: 'Title',
                   ),
                   validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
                 ),
