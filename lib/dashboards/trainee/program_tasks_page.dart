@@ -1,7 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'widgets_task_completion.dart';
 
+// ajuste se o arquivo estiver em outro diretório
+import 'widgets_task_completion.dart';
 
 const String kUsersCol = 'users';
 const String kProgramsCol = 'training_programs';
@@ -40,42 +41,51 @@ class _ProgramTasksPageState extends State<ProgramTasksPage> {
     _programFuture = _loadProgram(widget.programId);
   }
 
-  // ----------- DATA -------------
+  // ---------------------- DATA ----------------------
+
   Future<_ProgramModel?> _loadProgram(String programId) async {
-    final doc =
-    await FirebaseFirestore.instance.collection(kProgramsCol).doc(programId).get();
+    final doc = await FirebaseFirestore.instance
+        .collection(kProgramsCol)
+        .doc(programId)
+        .get();
+
     if (!doc.exists) return null;
-    final m = doc.data() ?? {};
-    final title = (m['title'] as String?) ?? programId;
-    final chaptersMap = (m['chapters'] ?? {}) as Map<String, dynamic>;
+    final data = doc.data() ?? {};
 
-    // Parse chapters/tasks (map->model) com ordenação natural 1, 1.1, 1.2, 2...
-    final chapterKeys = chaptersMap.keys.map((e) => e.toString()).toList()..sort(_naturalCompare);
+    final title = (data['title'] as String?) ?? programId;
+    final chaptersMap = (data['chapters'] ?? {}) as Map<String, dynamic>;
+
+    final chKeys = chaptersMap.keys.map((e) => e.toString()).toList()..sort(_naturalCompare);
+
     final chapters = <_ChapterModel>[];
-
-    for (final chKey in chapterKeys) {
+    for (final chKey in chKeys) {
       final tasksMap = chaptersMap[chKey];
       final tasks = <_TaskModel>[];
+
       if (tasksMap is Map<String, dynamic>) {
-        final taskKeys = tasksMap.keys.map((e) => e.toString()).toList()..sort(_naturalCompare);
-        for (final tKey in taskKeys) {
+        final tKeys = tasksMap.keys.map((e) => e.toString()).toList()..sort(_naturalCompare);
+        for (final tKey in tKeys) {
           final tVal = tasksMap[tKey];
           if (tVal is Map<String, dynamic>) {
-            final title = (tVal['task'] as String?) ?? tKey.toString();
+            final taskTitle = (tVal['task'] as String?) ?? tKey.toString();
             final qty = (tVal['qty'] is num) ? (tVal['qty'] as num).toInt() : 1;
-            tasks.add(_TaskModel(id: tKey.toString(), title: title, qty: qty));
+            tasks.add(_TaskModel(id: tKey.toString(), title: taskTitle, qty: qty));
           }
         }
       }
+
       chapters.add(_ChapterModel(id: chKey, title: 'Chapter $chKey', tasks: tasks));
     }
 
     return _ProgramModel(id: programId, title: title, chapters: chapters);
   }
 
-  Stream<Set<String>> _declaredTaskIdsStream() {
+  /// Retorna taskId -> declaredAt (DateTime?) das tasks declaradas pelo usuário
+  /// para este programa (+ optional campaign).
+  Stream<Map<String, DateTime?>> _declaredTasksStream() {
     Query<Map<String, dynamic>> q = FirebaseFirestore.instance
-        .collection(kUsersCol).doc(widget.userId)
+        .collection(kUsersCol)
+        .doc(widget.userId)
         .collection(kTaskDeclSubcol)
         .where('programId', isEqualTo: widget.programId);
 
@@ -84,17 +94,21 @@ class _ProgramTasksPageState extends State<ProgramTasksPage> {
     }
 
     return q.snapshots().map((snap) {
-      final ids = <String>{};
+      final map = <String, DateTime?>{};
       for (final d in snap.docs) {
         final m = d.data();
-        final tid = (m['taskId'] ?? '').toString();
-        if (tid.isNotEmpty) ids.add(tid);
+        final taskId = (m['taskId'] ?? '').toString();
+        final ts = m['declaredAt'];
+        DateTime? dt;
+        if (ts is Timestamp) dt = ts.toDate();
+        if (taskId.isNotEmpty) map[taskId] = dt;
       }
-      return ids;
+      return map;
     });
   }
 
-  // ----------- UI -------------
+  // ---------------------- UI ----------------------
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -123,23 +137,23 @@ class _ProgramTasksPageState extends State<ProgramTasksPage> {
             return const Center(child: Text('Program not found.'));
           }
 
-          return StreamBuilder<Set<String>>(
-            stream: _declaredTaskIdsStream(),
+          return StreamBuilder<Map<String, DateTime?>>(
+            stream: _declaredTasksStream(),
             builder: (context, dsnap) {
-              final declared = dsnap.data ?? <String>{};
+              final declaredMap = dsnap.data ?? const <String, DateTime?>{};
 
-              // Totais gerais
-              final totalTasks = program.chapters.fold<int>(0, (sum, c) => sum + c.tasks.length);
+              // Totais gerais (barra de topo)
+              final totalTasks =
+              program.chapters.fold<int>(0, (sum, c) => sum + c.tasks.length);
               final doneTasks = program.chapters.fold<int>(
                 0,
-                    (sum, c) => sum + c.tasks.where((t) => declared.contains(t.id)).length,
+                    (sum, c) => sum + c.tasks.where((t) => declaredMap.containsKey(t.id)).length,
               );
               final progress = totalTasks == 0 ? 0.0 : doneTasks / totalTasks;
 
               return ListView(
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
                 children: [
-                  // Resumo geral
                   _SummaryCard(
                     title: 'Overall Progress',
                     progress: progress,
@@ -148,7 +162,6 @@ class _ProgramTasksPageState extends State<ProgramTasksPage> {
                   ),
                   const SizedBox(height: 16),
 
-                  // Filtros + busca
                   _FiltersBar(
                     filter: _filter,
                     onFilter: (f) => setState(() => _filter = f),
@@ -156,19 +169,18 @@ class _ProgramTasksPageState extends State<ProgramTasksPage> {
                   ),
                   const SizedBox(height: 12),
 
-                  // Capítulos
+                  // LISTA DE CAPÍTULOS
                   ...program.chapters.map((ch) {
                     final chTotal = ch.tasks.length;
                     final chDone =
-                        ch.tasks.where((t) => declared.contains(t.id)).length;
+                        ch.tasks.where((t) => declaredMap.containsKey(t.id)).length;
                     final chProgress = chTotal == 0 ? 0.0 : chDone / chTotal;
 
-                    // aplica busca/filtro por capítulo+task
                     final filteredTasks = ch.tasks.where((t) {
                       final matchesQuery = _query.isEmpty ||
                           t.title.toLowerCase().contains(_query) ||
                           t.id.toLowerCase().contains(_query);
-                      final isDone = declared.contains(t.id);
+                      final isDone = declaredMap.containsKey(t.id);
                       final matchesFilter = switch (_filter) {
                         _TaskFilter.all => true,
                         _TaskFilter.pending => !isDone,
@@ -184,11 +196,12 @@ class _ProgramTasksPageState extends State<ProgramTasksPage> {
                       done: chDone,
                       total: chTotal,
                       tasks: filteredTasks.map((t) {
-                        final isDone = declared.contains(t.id);
+                        final dt = declaredMap[t.id];
                         return _TaskTileData(
                           id: t.id,
                           title: t.title,
-                          done: isDone,
+                          done: dt != null,
+                          declaredAt: dt, // <- data para mostrar
                         );
                       }).toList(),
                       onDeclare: (chapterId, chapterTitle, task) async {
@@ -205,7 +218,6 @@ class _ProgramTasksPageState extends State<ProgramTasksPage> {
                         );
                       },
                     );
-
                   }),
                 ],
               );
@@ -217,7 +229,7 @@ class _ProgramTasksPageState extends State<ProgramTasksPage> {
   }
 }
 
-// ----------------- WIDGETS DE UI -----------------
+// ---------------------- WIDGETS ----------------------
 
 class _SummaryCard extends StatelessWidget {
   const _SummaryCard({
@@ -240,32 +252,26 @@ class _SummaryCard extends StatelessWidget {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(children: [
-                    const Icon(Icons.insights_outlined),
-                    const SizedBox(width: 8),
-                    Text(title, style: theme.textTheme.titleMedium),
-                  ]),
-                  const SizedBox(height: 12),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: LinearProgressIndicator(
-                      value: progress.clamp(0.0, 1.0),
-                      minHeight: 10,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '$done / $total completed',
-                    style: theme.textTheme.labelMedium?.copyWith(color: Colors.black54),
-                  ),
-                ],
+            Row(children: [
+              const Icon(Icons.insights_outlined),
+              const SizedBox(width: 8),
+              Text(title, style: theme.textTheme.titleMedium),
+            ]),
+            const SizedBox(height: 12),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: LinearProgressIndicator(
+                value: progress.clamp(0.0, 1.0),
+                minHeight: 10,
               ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '$done / $total completed',
+              style: theme.textTheme.labelMedium?.copyWith(color: Colors.black54),
             ),
           ],
         ),
@@ -333,7 +339,7 @@ class _ChapterCard extends StatefulWidget {
     required this.done,
     required this.total,
     required this.tasks,
-    required this.onDeclare, // <- NOVO
+    required this.onDeclare,
   });
 
   final String chapterTitle;
@@ -342,7 +348,7 @@ class _ChapterCard extends StatefulWidget {
   final int done;
   final int total;
   final List<_TaskTileData> tasks;
-  final void Function(String chapterId, String chapterTitle, _TaskTileData task) onDeclare; // <- NOVO
+  final void Function(String chapterId, String chapterTitle, _TaskTileData task) onDeclare;
 
   @override
   State<_ChapterCard> createState() => _ChapterCardState();
@@ -363,7 +369,6 @@ class _ChapterCardState extends State<_ChapterCard> {
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
         child: Column(
           children: [
-            // Header
             InkWell(
               onTap: () => setState(() => _expanded = !_expanded),
               child: Row(
@@ -371,8 +376,7 @@ class _ChapterCardState extends State<_ChapterCard> {
                   const Icon(Icons.menu_book_outlined),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: Text(widget.chapterTitle,
-                        style: theme.textTheme.titleMedium),
+                    child: Text(widget.chapterTitle, style: theme.textTheme.titleMedium),
                   ),
                   Text('${widget.done}/${widget.total}',
                       style: theme.textTheme.labelMedium),
@@ -393,7 +397,6 @@ class _ChapterCardState extends State<_ChapterCard> {
             ),
             const SizedBox(height: 10),
 
-            // Tasks
             if (_expanded)
               Column(
                 children: widget.tasks.map((t) {
@@ -407,9 +410,16 @@ class _ChapterCardState extends State<_ChapterCard> {
                     subtitle: Text(t.id),
                     dense: true,
                     trailing: t.done
-                        ? const Text('Declared', style: TextStyle(color: Colors.green))
+                        ? Text(
+                      'Declared${t.declaredAt != null ? ' • ${_fmtDate(t.declaredAt!)}' : ''}',
+                      style: const TextStyle(color: Colors.green),
+                    )
                         : TextButton.icon(
-                      onPressed: () => widget.onDeclare(widget.chapterId, widget.chapterTitle, t),
+                      onPressed: () => widget.onDeclare(
+                        widget.chapterId,
+                        widget.chapterTitle,
+                        t,
+                      ),
                       icon: const Icon(Icons.add_task),
                       label: const Text('Declare'),
                     ),
@@ -426,7 +436,7 @@ class _ChapterCardState extends State<_ChapterCard> {
   }
 }
 
-// ----------------- MODELOS & HELPERS -----------------
+// ---------------------- MODELOS & HELPERS ----------------------
 
 class _ProgramModel {
   final String id;
@@ -453,7 +463,14 @@ class _TaskTileData {
   final String id;
   final String title;
   final bool done;
-  _TaskTileData({required this.id, required this.title, required this.done});
+  final DateTime? declaredAt;
+
+  _TaskTileData({
+    required this.id,
+    required this.title,
+    required this.done,
+    this.declaredAt,
+  });
 }
 
 int _naturalCompare(String a, String b) {
@@ -466,4 +483,13 @@ int _naturalCompare(String a, String b) {
     if (ai != bi) return ai.compareTo(bi);
   }
   return a.compareTo(b);
+}
+
+String _fmtDate(DateTime d) {
+  const months = [
+    'Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'
+  ];
+  final dd = d.day.toString().padLeft(2, '0');
+  final mon = months[d.month - 1];
+  return '$dd $mon ${d.year}';
 }
