@@ -20,6 +20,7 @@ Future<void> declareTaskCompletion({
   required String chapterTitle,
   required String taskId,
   required String taskTitle,
+  int? requiredQty, // <- OPCIONAL (mantém compatibilidade). Se null, busco no training_programs; fallback = 1.
 }) async {
   final ok = await showDialog<bool>(
     context: context,
@@ -46,39 +47,120 @@ Future<void> declareTaskCompletion({
     return;
   }
 
-  // docId deduplicado
+  final db = FirebaseFirestore.instance;
+  final usersCol = db.collection(kUsersCol);
+
+  // 0) Pega metadados do usuário (para denormalização e filtro do supervisor)
+  final uSnap = await usersCol.doc(userId).get();
+  final uData = uSnap.data() ?? {};
+  final traineeVessel = (uData['vessel'] ?? '').toString();
+  final traineeName  = (uData['userName'] ?? '').toString();
+  final traineeRole  = (uData['userRole'] ?? uData['role'] ?? '').toString();
+
+  // 1) Resolve requiredQty (se não veio por parâmetro)
+  final int reqQty = requiredQty ?? await _resolveRequiredQty(
+    programId: programId,
+    chapterId: chapterId,
+    taskId: taskId,
+  );
+
+  // 2) Doc pai deduplicado por campaign/program/chapter/task
   final safeTask = taskId.replaceAll('.', '·');
-  final docId = (campaignId != null && campaignId.isNotEmpty)
+  final declId = (campaignId != null && campaignId.isNotEmpty)
       ? '${campaignId}__${programId}__${chapterId}__${safeTask}'
       : '${programId}__${chapterId}__${safeTask}';
 
-  final declRef = FirebaseFirestore.instance
-      .collection(kUsersCol).doc(userId)
-      .collection(kTaskDeclSubcol).doc(docId);
+  final declRef = usersCol.doc(userId).collection(kTaskDeclSubcol).doc(declId);
+  final compsCol = declRef.collection('completions');
 
+  // 3) Transação: garante doc pai + cria NOVA completion
   try {
-    if ((await declRef.get()).exists) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('This task was already declared.')),
-        );
-      }
-      return;
-    }
+    await db.runTransaction((tx) async {
+      final now = FieldValue.serverTimestamp();
 
-    await declRef.set({
-      'userId': userId,
-      'campaignId': campaignId,
-      'programId': programId,
-      'programTitle': programTitle,
-      'chapterId': chapterId,
-      'chapterTitle': chapterTitle,
-      'taskId': taskId,
-      'taskTitle': taskTitle,
-      'status': 'declared',
-      'declaredAt': FieldValue.serverTimestamp(),
-      'updatedAt': FieldValue.serverTimestamp(),
-      'keyReadable': '$programId::$chapterId::$taskId',
+      final declSnap = await tx.get(declRef);
+      int declaredCount = 0;
+      int approvedCount = 0;
+      int currentReqQty = reqQty;
+
+      if (!declSnap.exists) {
+        // Doc pai novo
+        tx.set(declRef, {
+          'userId': userId,
+          'traineeName': traineeName,
+          'traineeRole': traineeRole,
+          'vessel': traineeVessel,
+
+          'campaignId': campaignId ?? '',
+          'programId': programId,
+          'programTitle': programTitle,
+          'chapterId': chapterId,
+          'chapterTitle': chapterTitle,
+          'taskId': taskId,
+          'taskTitle': taskTitle,
+
+          'requiredQty': currentReqQty,
+          'declaredCount': 0,
+          'approvedCount': 0,
+          'status': 'declared', // haverá uma completion pendente já já
+
+          'keyReadable': '$programId::$chapterId::$taskId',
+          'createdAt': now,
+          'updatedAt': now,
+        });
+      } else {
+        final m = declSnap.data() ?? {};
+        declaredCount = (m['declaredCount'] ?? 0) as int;
+        approvedCount = (m['approvedCount'] ?? 0) as int;
+        currentReqQty = (m['requiredQty'] ?? currentReqQty) as int;
+
+        // Se o doc antigo não tinha esses campos, garante a existência
+        final patch = <String, Object?>{};
+        if (!m.containsKey('vessel'))       patch['vessel'] = traineeVessel;
+        if (!m.containsKey('traineeName'))  patch['traineeName'] = traineeName;
+        if (!m.containsKey('traineeRole'))  patch['traineeRole'] = traineeRole;
+        if (!m.containsKey('requiredQty'))  patch['requiredQty'] = currentReqQty;
+        if (!m.containsKey('declaredCount')) patch['declaredCount'] = declaredCount;
+        if (!m.containsKey('approvedCount')) patch['approvedCount'] = approvedCount;
+        if (patch.isNotEmpty) {
+          patch['updatedAt'] = now;
+          tx.update(declRef, patch);
+        } else {
+          tx.update(declRef, {'updatedAt': now});
+        }
+      }
+
+      // Índice desta ocorrência = já declaradas + aprovadas + 1
+      final nextIndex = declaredCount + approvedCount + 1;
+
+      // 4) Cria a completion "declared"
+      final compRef = compsCol.doc();
+      tx.set(compRef, {
+        'index': nextIndex,
+        'status': 'declared',
+        'declaredAt': now,
+
+        // denormalização p/ supervisor (collectionGroup)
+        'userId': userId,
+        'traineeName': traineeName,
+        'vessel': traineeVessel,
+
+        'campaignId': campaignId ?? '',
+        'programId': programId,
+        'programTitle': programTitle,
+        'chapterId': chapterId,
+        'chapterTitle': chapterTitle,
+        'taskId': taskId,
+        'taskTitle': taskTitle,
+        'requiredQty': currentReqQty,
+      });
+
+      // 5) Atualiza agregados do pai
+      tx.update(declRef, {
+        'declaredCount': FieldValue.increment(1),
+        'status': 'declared',
+        'updatedAt': now,
+      });
     });
 
     if (context.mounted) {
@@ -92,6 +174,37 @@ Future<void> declareTaskCompletion({
         SnackBar(content: Text('Failed to declare task: $e')),
       );
     }
+  }
+}
+
+/// Busca qty em training_programs/{programId}.chapters[{chapterId}][{taskId}].qty
+/// Se não achar, retorna 1.
+Future<int> _resolveRequiredQty({
+  required String programId,
+  required String chapterId,
+  required String taskId,
+}) async {
+  try {
+    final doc = await FirebaseFirestore.instance
+        .collection('training_programs')
+        .doc(programId)
+        .get();
+    if (!doc.exists) return 1;
+    final data = doc.data() ?? {};
+    final chapters = data['chapters'];
+    if (chapters is! Map) return 1;
+
+    final ch = chapters[chapterId];
+    if (ch is! Map) return 1;
+
+    final t = ch[taskId];
+    if (t is! Map) return 1;
+
+    final q = t['qty'];
+    if (q is num) return q.toInt();
+    return 1;
+  } catch (_) {
+    return 1;
   }
 }
 

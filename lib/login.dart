@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:tprb/dashboards/supervisor.dart';
+import 'package:tprb/dashboards/supervisor/supervisor.dart';
 import 'dashboards/trainee/trainee.dart';
 import 'dashboards/admin/admin.dart';
 import 'dashboards/office/office.dart';
