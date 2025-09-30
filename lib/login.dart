@@ -131,11 +131,11 @@ class _LoginPageState extends State<LoginPage> {
     }
     try {
       await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
-      _showSnack('E-mail de redefinição de senha enviado para $email');
+      _showSnack('Redefinition email sent to $email');
     } on FirebaseAuthException catch (e) {
       final map = <String, String>{
-        'invalid-email': 'E-mail inválido.',
-        'user-not-found': 'Esse e-mail não está cadastrado.',
+        'invalid-email': 'Invalid email.',
+        'user-not-found': 'This email is not registered.',
       };
       final msg = map[e.code] ?? 'Não foi possível enviar o e-mail. (code: ${e.code})';
       _showSnack(msg);
@@ -225,9 +225,9 @@ class _LoginPageState extends State<LoginPage> {
             ),
             validator: (v) {
               final value = v?.trim() ?? '';
-              if (value.isEmpty) return 'Informe seu e-mail';
+              if (value.isEmpty) return 'Inform your email';
               final rx = RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$');
-              if (!rx.hasMatch(value)) return 'E-mail inválido';
+              if (!rx.hasMatch(value)) return 'Invalid email';
               return null;
             },
           ),
@@ -240,18 +240,18 @@ class _LoginPageState extends State<LoginPage> {
             obscureText: _obscure,
             onFieldSubmitted: (_) => _signIn(),
             decoration: InputDecoration(
-              labelText: 'Senha',
+              labelText: 'Password',
               border: const OutlineInputBorder(),
               prefixIcon: const Icon(Icons.lock_outline),
               suffixIcon: IconButton(
-                tooltip: _obscure ? 'Mostrar senha' : 'Ocultar senha',
+                tooltip: _obscure ? 'Show password' : 'Hide password',
                 icon: Icon(_obscure ? Icons.visibility : Icons.visibility_off),
                 onPressed: () => setState(() => _obscure = !_obscure),
               ),
             ),
             validator: (v) {
               final value = v ?? '';
-              if (value.isEmpty) return 'Informe sua senha';
+              if (value.isEmpty) return 'Inform your password';
               return null;
             },
           ),
@@ -262,7 +262,7 @@ class _LoginPageState extends State<LoginPage> {
             alignment: Alignment.centerRight,
             child: TextButton(
               onPressed: _busy ? null : _sendReset,
-              child: const Text('Esqueci minha senha'),
+              child: const Text('Forgot my password'),
             ),
           ),
           const SizedBox(height: 8),
@@ -274,7 +274,7 @@ class _LoginPageState extends State<LoginPage> {
                 ? const SizedBox(
                 width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                 : const Icon(Icons.login),
-            label: Text(_busy ? 'Entrando...' : 'Entrar'),
+            label: Text(_busy ? 'Logging in...' : 'Log in'),
             style: FilledButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),

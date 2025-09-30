@@ -293,151 +293,199 @@ class _OfficerReviewDashboardPageState extends State<OfficerReviewDashboardPage>
         userId: FirebaseAuth.instance.currentUser?.uid,
         email: FirebaseAuth.instance.currentUser?.email,
       ),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1160),
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(24, 18, 24, 24),
-            child: FutureBuilder<_SupervisorMeta>(
-              future: _metaFut,
-              builder: (context, snap) {
-                final meta = snap.data;
+      body: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 1160),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(24, 18, 24, 24),
+          child: FutureBuilder<_SupervisorMeta>(
+            future: _metaFut,
+            builder: (context, snap) {
+              final meta = snap.data;
 
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Officer Review Dashboard',
-                        style: theme.textTheme.headlineSmall?.copyWith(
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: -.2,
-                        )),
-                    const SizedBox(height: 4),
-                    Text(
-                      meta == null
-                          ? 'Loading...'
-                          : 'Review and approve trainee task submissions for ${meta.vessel.isEmpty ? 'your vessel' : meta.vessel}',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: Colors.black.withOpacity(.62),
-                      ),
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Supervisor Review Dashboard',
+                      style: theme.textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -.2,
+                      )),
+                  const SizedBox(height: 4),
+                  Text(
+                    meta == null
+                        ? 'Loading...'
+                        : 'Review and approve trainee task submissions for ${meta.vessel.isEmpty ? 'your vessel' : meta.vessel}',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: Colors.black.withOpacity(.62),
                     ),
-                    const SizedBox(height: 18),
+                  ),
+                  const SizedBox(height: 18),
 
-                    // ==== KPI CARDS ====
-                    LayoutBuilder(
-                      builder: (context, constraints) {
-                        final cols = constraints.maxWidth >= 980
-                            ? 4
-                            : constraints.maxWidth >= 700
-                            ? 2
-                            : 1;
+                  // ==== KPI CARDS ====
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final isMobile = constraints.maxWidth < 500;
 
-                        const spacing = 16.0;
-                        final totalSpacing = spacing * (cols - 1);
-                        final cellWidth = (constraints.maxWidth - totalSpacing) / cols;
-
-                        Widget item(Widget child) => SizedBox(width: cellWidth, child: child);
-
-                        return Wrap(
-                          spacing: spacing,
-                          runSpacing: spacing,
+                      if (isMobile) {
+                        // labels CURTAS para evitar corte: Pending / Approved / Returned / Active
+                        return Row(
                           children: [
-                            item(_KpiCard(
-                              value: '$_kpiPending',
-                              label: 'Pending Review',
-                              icon: Icons.timer_outlined,
-                              iconBg: const Color(0xFFE9F0FF),
-                              iconColor: const Color(0xFF3B82F6),
-                            )),
-                            item(const _KpiCard(
-                              value: '0',
-                              label: 'Approved This Week',
-                              icon: Icons.verified_outlined,
-                              iconBg: Color(0xFFE8F7EE),
-                              iconColor: Color(0xFF22C55E),
-                            )),
-                            item(const _KpiCard(
-                              value: '0',
-                              label: 'Returned',
-                              icon: Icons.error_outline,
-                              iconBg: Color(0xFFFFF1EC),
-                              iconColor: Color(0xFFF97316),
-                            )),
-                            item(_KpiCard(
-                              value: '$_kpiActiveTrainees',
-                              label: 'Active Trainees',
-                              icon: Icons.person_outline,
-                              iconBg: const Color(0xFFF2ECFF),
-                              iconColor: const Color(0xFF8B5CF6),
-                            )),
+                            Expanded(
+                              child: _KpiMiniCard(
+                                value: '$_kpiPending',
+                                label: 'Pending',
+                                icon: Icons.timer_outlined,
+                                iconBg: const Color(0xFFE9F0FF),
+                                iconColor: const Color(0xFF3B82F6),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            const Expanded(
+                              child: _KpiMiniCard(
+                                value: '0',
+                                label: 'Approved',
+                                icon: Icons.verified_outlined,
+                                iconBg: Color(0xFFE8F7EE),
+                                iconColor: Color(0xFF22C55E),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            const Expanded(
+                              child: _KpiMiniCard(
+                                value: '0',
+                                label: 'Returned',
+                                icon: Icons.error_outline,
+                                iconBg: Color(0xFFFFF1EC),
+                                iconColor: Color(0xFFF97316),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: _KpiMiniCard(
+                                value: '$_kpiActiveTrainees',
+                                label: 'Active',
+                                icon: Icons.person_outline,
+                                iconBg: const Color(0xFFF2ECFF),
+                                iconColor: const Color(0xFF8B5CF6),
+                              ),
+                            ),
                           ],
                         );
-                      },
-                    ),
+                      }
 
-                    const SizedBox(height: 18),
+                      // --- DESKTOP/TABLET: mantém sua grade original de cards grandes ---
+                      final cols = constraints.maxWidth >= 980
+                          ? 4
+                          : constraints.maxWidth >= 700
+                          ? 2
+                          : 1;
 
-                    // ========= Pending Reviews =========
-                    _SectionSurface(
-                      padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      const spacing = 16.0;
+                      final totalSpacing = spacing * (cols - 1);
+                      final cellWidth = (constraints.maxWidth - totalSpacing) / cols;
+
+                      Widget item(Widget child) => SizedBox(width: cellWidth, child: child);
+
+                      return Wrap(
+                        spacing: spacing,
+                        runSpacing: spacing,
                         children: [
-                          Row(children: [
-                            Icon(Icons.auto_awesome, size: 18, color: Colors.black.withOpacity(.72)),
-                            const SizedBox(width: 8),
-                            Text('Pending Reviews',
-                                style: theme.textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.w800,
-                                )),
-                          ]),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Task submissions awaiting your review and digital signature',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: Colors.black.withOpacity(.55),
-                            ),
-                          ),
-                          const SizedBox(height: 14),
-
-                          StreamBuilder<List<_PendingItem>>(
-                            stream: _pendingCtrl.stream,
-                            builder: (context, snap) {
-                              final items = snap.data ?? const <_PendingItem>[];
-                              if (items.isEmpty) {
-                                return Container(
-                                  padding: const EdgeInsets.all(16),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFF7F9FB),
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Text(
-                                    'No submissions pending review.',
-                                    style: TextStyle(color: Colors.black.withOpacity(.62)),
-                                  ),
-                                );
-                              }
-
-                              return Column(
-                                children: [
-                                  for (int i = 0; i < items.length; i++) ...[
-                                    _PendingItemCard(
-                                      item: items[i],
-                                      submittedAtStr: _fmtDate(items[i].submittedAt),
-                                      onReviewAndSign: () => _approve(items[i]),
-                                    ),
-                                    if (i < items.length - 1) const SizedBox(height: 12),
-                                  ]
-                                ],
-                              );
-                            },
-                          ),
+                          item(_KpiCard(
+                            value: '$_kpiPending',
+                            label: 'Pending Review',
+                            icon: Icons.timer_outlined,
+                            iconBg: const Color(0xFFE9F0FF),
+                            iconColor: const Color(0xFF3B82F6),
+                          )),
+                          item(const _KpiCard(
+                            value: '0',
+                            label: 'Approved This Week',
+                            icon: Icons.verified_outlined,
+                            iconBg: Color(0xFFE8F7EE),
+                            iconColor: Color(0xFF22C55E),
+                          )),
+                          item(const _KpiCard(
+                            value: '0',
+                            label: 'Returned',
+                            icon: Icons.error_outline,
+                            iconBg: Color(0xFFFFF1EC),
+                            iconColor: Color(0xFFF97316),
+                          )),
+                          item(_KpiCard(
+                            value: '$_kpiActiveTrainees',
+                            label: 'Active Trainees',
+                            icon: Icons.person_outline,
+                            iconBg: const Color(0xFFF2ECFF),
+                            iconColor: const Color(0xFF8B5CF6),
+                          )),
                         ],
-                      ),
+                      );
+                    },
+                  ),
+
+                  const SizedBox(height: 18),
+
+                  // ========= Pending Reviews =========
+                  _SectionSurface(
+                    padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(children: [
+                          Icon(Icons.auto_awesome, size: 18, color: Colors.black.withOpacity(.72)),
+                          const SizedBox(width: 8),
+                          Text('Pending Reviews',
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w800,
+                              )),
+                        ]),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Task submissions awaiting your review and digital signature',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: Colors.black.withOpacity(.55),
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+
+                        StreamBuilder<List<_PendingItem>>(
+                          stream: _pendingCtrl.stream,
+                          builder: (context, snap) {
+                            final items = snap.data ?? const <_PendingItem>[];
+                            if (items.isEmpty) {
+                              return Container(
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF7F9FB),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Text(
+                                  'No submissions pending review.',
+                                  style: TextStyle(color: Colors.black.withOpacity(.62)),
+                                ),
+                              );
+                            }
+
+                            return Column(
+                              children: [
+                                for (int i = 0; i < items.length; i++) ...[
+                                  _PendingItemCard(
+                                    item: items[i],
+                                    submittedAtStr: _fmtDate(items[i].submittedAt),
+                                    onReviewAndSign: () => _approve(items[i]),
+                                  ),
+                                  if (i < items.length - 1) const SizedBox(height: 12),
+                                ]
+                              ],
+                            );
+                          },
+                        ),
+                      ],
                     ),
-                  ],
-                );
-              },
-            ),
+                  ),
+                ],
+              );
+            },
           ),
         ),
       ),
@@ -501,16 +549,74 @@ class _KpiCard extends StatelessWidget {
   final Color iconBg;
   final Color iconColor;
 
+  /// NOVO: quando `compact == true`, renderiza um quadradinho (ícone + número)
+  final bool compact;
+
+  /// NOVO: tamanho do lado no modo compacto (default 76)
+  final double size;
+
   const _KpiCard({
     required this.value,
     required this.label,
     required this.icon,
     required this.iconBg,
     required this.iconColor,
+    this.compact = false,
+    this.size = 76,
   });
 
   @override
   Widget build(BuildContext context) {
+    if (compact) {
+      // ---- MODO COMPACTO (ícone + contador) ----
+      return Tooltip(
+        message: label,
+        child: Container(
+          width: size,
+          height: size,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFE6EBF2)),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x11000000),
+                blurRadius: 8,
+                offset: Offset(0, 2),
+              ),
+            ],
+          ),
+          padding: const EdgeInsets.all(10),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                height: 28,
+                width: 28,
+                decoration: BoxDecoration(
+                  color: iconBg,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(icon, color: iconColor, size: 18),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                value,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -.2,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // ---- MODO PADRÃO (o seu cartão grande) ----
     final valueStyle = Theme.of(context).textTheme.headlineSmall?.copyWith(
       fontWeight: FontWeight.w800,
       letterSpacing: -.2,
@@ -524,31 +630,30 @@ class _KpiCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            Text(value, style: valueStyle),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(value, style: valueStyle),
-                const SizedBox(height: 6),
-                Text(
-                  label,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  softWrap: true,
-                  style: TextStyle(
-                    color: Colors.black.withOpacity(.62),
-                    height: 1.2,
+                OutlinedButton(
+                  onPressed: () {},
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    side: const BorderSide(color: Color(0xFFE6EBF2)),
+                    foregroundColor: const Color(0xFF374151),
+                    shape: const StadiumBorder(),
                   ),
+                  child: Text(label, style: const TextStyle(fontWeight: FontWeight.w700)),
+                ),
+                Container(
+                  height: 36,
+                  width: 36,
+                  decoration: BoxDecoration(
+                    color: iconBg,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(icon, color: iconColor, size: 20),
                 ),
               ],
-            ),
-            Container(
-              height: 36,
-              width: 36,
-              decoration: BoxDecoration(
-                color: iconBg,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(icon, color: iconColor, size: 20),
             ),
           ],
         ),
@@ -579,6 +684,69 @@ class _SectionSurface extends StatelessWidget {
         ],
       ),
       child: child,
+    );
+  }
+}
+
+class _KpiMiniCard extends StatelessWidget {
+  final String value;
+  final String label; // aparece 1 linha (curta) + tooltip completo
+  final IconData icon;
+  final Color iconBg;
+  final Color iconColor;
+
+  const _KpiMiniCard({
+    required this.value,
+    required this.label,
+    required this.icon,
+    required this.iconBg,
+    required this.iconColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: label,
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFE6EBF2)),
+          boxShadow: const [
+            BoxShadow(color: Color(0x11000000), blurRadius: 8, offset: Offset(0, 2)),
+          ],
+        ),
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              height: 28,
+              width: 28,
+              decoration: BoxDecoration(
+                color: iconBg,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: iconColor, size: 18),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              value,
+              maxLines: 1,
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 4),
+            // legenda curta, 1 linha, sem quebrar layout
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 11, color: Colors.black54),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

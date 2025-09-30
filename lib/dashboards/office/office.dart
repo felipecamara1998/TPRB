@@ -48,15 +48,15 @@ class FleetOverviewPage extends StatelessWidget {
                 const SizedBox(height: 16),
 
                 // Filtros rápidos (mantidos)
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 8,
-                  children: const [
-                    _FilterChipLike(label: 'All Vessels', icon: Icons.expand_more),
-                    _FilterChipLike(label: 'Last 30 days', icon: Icons.expand_more),
-                    _OutlineAction(label: 'Export Report', icon: Icons.download),
-                  ],
-                ),
+                // Wrap(
+                //   spacing: 12,
+                //   runSpacing: 8,
+                //   children: const [
+                //     _FilterChipLike(label: 'All Vessels', icon: Icons.expand_more),
+                //     _FilterChipLike(label: 'Last 30 days', icon: Icons.expand_more),
+                //     _OutlineAction(label: 'Export Report', icon: Icons.download),
+                //   ],
+                // ),
                 const SizedBox(height: 16),
 
                 // NEW: Create Training Campaign (lançador para nova página)
@@ -153,43 +153,43 @@ class FleetOverviewPage extends StatelessWidget {
 
                 // NEW CARD WAS INSERTED ABOVE. A partir daqui, mantive tudo que já existia.
 
-                // Weekly progress + Task status
-                _ResponsiveRow(
-                  gap: 16,
-                  children: [
-                    _Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: const [
-                            _SectionTitle('Weekly Training Progress'),
-                            SizedBox(height: 8),
-                            _WeekProgressRow(label: 'Jan Week 1', completed: 24, inProgress: 18, total: 42),
-                            _WeekProgressRow(label: 'Jan Week 2', completed: 31, inProgress: 22, total: 53),
-                            _WeekProgressRow(label: 'Jan Week 3', completed: 28, inProgress: 19, total: 47),
-                            _WeekProgressRow(label: 'Current',   completed: 35, inProgress: 20, total: 55),
-                          ],
-                        ),
-                      ),
-                    ),
-                    _Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: const [
-                            _SectionTitle('Fleet Task Status'),
-                            SizedBox(height: 8),
-                            _StatusLegend(label: 'Completed', value: 156),
-                            _StatusLegend(label: 'In progress', value: 112),
-                            _StatusLegend(label: 'Not started', value: 223),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+                // // Weekly progress + Task status
+                // _ResponsiveRow(
+                //   gap: 16,
+                //   children: [
+                //     _Card(
+                //       child: Padding(
+                //         padding: const EdgeInsets.all(16),
+                //         child: Column(
+                //           crossAxisAlignment: CrossAxisAlignment.start,
+                //           children: const [
+                //             _SectionTitle('Weekly Training Progress'),
+                //             SizedBox(height: 8),
+                //             _WeekProgressRow(label: 'Jan Week 1', completed: 24, inProgress: 18, total: 42),
+                //             _WeekProgressRow(label: 'Jan Week 2', completed: 31, inProgress: 22, total: 53),
+                //             _WeekProgressRow(label: 'Jan Week 3', completed: 28, inProgress: 19, total: 47),
+                //             _WeekProgressRow(label: 'Current',   completed: 35, inProgress: 20, total: 55),
+                //           ],
+                //         ),
+                //       ),
+                //     ),
+                //     _Card(
+                //       child: Padding(
+                //         padding: const EdgeInsets.all(16),
+                //         child: Column(
+                //           crossAxisAlignment: CrossAxisAlignment.start,
+                //           children: const [
+                //             _SectionTitle('Fleet Task Status'),
+                //             SizedBox(height: 8),
+                //             _StatusLegend(label: 'Completed', value: 156),
+                //             _StatusLegend(label: 'In progress', value: 112),
+                //             _StatusLegend(label: 'Not started', value: 223),
+                //           ],
+                //         ),
+                //       ),
+                //     ),
+                //   ],
+                // ),
 
                 const SizedBox(height: 16),
                 // ... (demais seções/quadros existentes no seu arquivo continuam iguais)

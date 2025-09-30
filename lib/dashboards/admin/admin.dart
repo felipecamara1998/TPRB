@@ -262,14 +262,14 @@ class _EditionsTab extends StatelessWidget {
             }
 
             // Mantém o bloco de impacto (como no seu layout original)
-            items.add(const _ImpactBox(
-              bulletPoints: [
-                '4 active vessels will receive the new edition',
-                '14 trainees will be notified of content updates',
-                '8 officers will need to review mapping changes',
-                'Existing progress will be preserved with migration mapping',
-              ],
-            ));
+            // items.add(const _ImpactBox(
+            //   bulletPoints: [
+            //     '4 active vessels will receive the new edition',
+            //     '14 trainees will be notified of content updates',
+            //     '8 officers will need to review mapping changes',
+            //     'Existing progress will be preserved with migration mapping',
+            //   ],
+            // ));
             items.add(const SizedBox(height: 24));
 
             return Column(
@@ -702,13 +702,11 @@ class _UserRow extends StatelessWidget {
   final String name;
   final String email;
   final String role;
-  final String status;
 
   const _UserRow({
     required this.name,
     required this.email,
     required this.role,
-    required this.status,
   });
 
   /// Constrói a linha a partir de um documento do Firestore
@@ -716,7 +714,6 @@ class _UserRow extends StatelessWidget {
     final data = doc.data();
     final email = (data['email'] as String?)?.trim() ?? 'unknown@domain';
     final role = (data['role'] as String?)?.trim() ?? 'Unknown';
-    final status = (data['status'] as String?)?.trim() ?? 'active';
     final name = (data['name'] as String?)?.trim() ??
         email.split('@').first; // fallback simples
 
@@ -724,7 +721,6 @@ class _UserRow extends StatelessWidget {
       name: name,
       email: email,
       role: role,
-      status: status,
     );
   }
 
@@ -756,7 +752,6 @@ class _UserRow extends StatelessWidget {
           ),
           _roleChip(role),
           const SizedBox(width: 8),
-          _statusChip(status),
           const SizedBox(width: 8),
           IconButton(
             onPressed: () {
@@ -789,21 +784,6 @@ class _UserRow extends StatelessWidget {
         border: Border.all(color: c.withOpacity(0.35)),
       ),
       child: Text(role, style: TextStyle(color: c, fontWeight: FontWeight.w600)),
-    );
-  }
-
-  Widget _statusChip(String status) {
-    final isActive = status.toLowerCase() == 'active';
-    final c = isActive ? const Color(0xFF2E7D32) : const Color(0xFF9E9E9E);
-    final label = isActive ? 'Active' : 'Inactive';
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: c.withOpacity(0.10),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: c.withOpacity(0.35)),
-      ),
-      child: Text(label, style: TextStyle(color: c, fontWeight: FontWeight.w600)),
     );
   }
 }

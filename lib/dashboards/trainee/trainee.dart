@@ -7,10 +7,6 @@ import 'widgets_trainee.dart';
 import 'widgets_task_completion.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-const String _kUsersCol = 'users';
-const String _kProgramsCol = 'training_programs';
-const String _kTaskDeclSubcol = 'task_declarations';
-
 /// Página principal do Trainee (Dashboard)
 class TraineeDashboardPage extends StatelessWidget {
   const TraineeDashboardPage({super.key});
@@ -90,16 +86,21 @@ class TraineeDashboardPage extends StatelessWidget {
                 const SizedBox(height: 16),
 
                 // Linha de cards
-                _ResponsiveRow(
-                  isWide: isWide,
-                  children: [
-                    Expanded(
-                      child: _CardShell(
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                Expanded(
+                  child: _CardShell(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const SizedBox(height: 12),
+                          Column(
                             children: [
+                              Text('Overall Progress',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .titleMedium
+                                      ?.copyWith(fontWeight: FontWeight.w700)),
                               const SizedBox(height: 12),
                               Center(
                                 child: (uid == null)
@@ -117,115 +118,110 @@ class TraineeDashboardPage extends StatelessWidget {
                               ),
                             ],
                           ),
-                        ),
+                        ],
                       ),
                     ),
-                    Expanded(
-                      child: _CardShell(
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const _SectionTitle(
-                                icon: Icons.insights_outlined,
-                                title: 'Quick Stats',
-                              ),
-                              const SizedBox(height: 12),
-                              Wrap(
-                                spacing: 12,
-                                runSpacing: 12,
-                                children: [
-                                  _StatPill(
-                                    icon: Icons.verified_rounded,
-                                    label: 'Approved Tasks',
-                                    value: approved,
-                                    color: Colors.green.shade600,
-                                  ),
-                                  _StatPill(
-                                    icon: Icons.schedule_rounded,
-                                    label: 'Pending Review',
-                                    value: pending,
-                                    color: Colors.amber.shade700,
-                                  ),
-                                  _StatPill(
-                                    icon: Icons.report_gmailerrorred_rounded,
-                                    label: 'Needs Action',
-                                    value: returned,
-                                    color: Colors.red.shade600,
-                                  ),
-                                  _StatPill(
-                                    icon: Icons.outbox_rounded,
-                                    label: 'Submitted',
-                                    value: submitted,
-                                    color: Colors.blue.shade700,
-                                  ),
-                                ],
-                              ),
-                            ],
+                  ),
+                ),
+                // Expanded(
+                //   child: _CardShell(
+                //     child: Padding(
+                //       padding: const EdgeInsets.all(16),
+                //       child: Column(
+                //         crossAxisAlignment: CrossAxisAlignment.start,
+                //         children: [
+                //           const _SectionTitle(
+                //             icon: Icons.insights_outlined,
+                //             title: 'Quick Stats',
+                //           ),
+                //           const SizedBox(height: 12),
+                //           Wrap(
+                //             spacing: 12,
+                //             runSpacing: 12,
+                //             children: [
+                //               _StatPill(
+                //                 icon: Icons.verified_rounded,
+                //                 label: 'Approved Tasks',
+                //                 value: approved,
+                //                 color: Colors.green.shade600,
+                //               ),
+                //               _StatPill(
+                //                 icon: Icons.schedule_rounded,
+                //                 label: 'Pending Review',
+                //                 value: pending,
+                //                 color: Colors.amber.shade700,
+                //               ),
+                //               _StatPill(
+                //                 icon: Icons.report_gmailerrorred_rounded,
+                //                 label: 'Needs Action',
+                //                 value: returned,
+                //                 color: Colors.red.shade600,
+                //               ),
+                //               _StatPill(
+                //                 icon: Icons.outbox_rounded,
+                //                 label: 'Submitted',
+                //                 value: submitted,
+                //                 color: Colors.blue.shade700,
+                //               ),
+                //             ],
+                //           ),
+                //         ],
+                //       ),
+                //     ),
+                //   ),
+                // ),
+                Expanded(
+                  child: _CardShell(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const _SectionTitle(
+                            icon: Icons.flag_outlined,
+                            title: 'Next Steps',
                           ),
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      child: _CardShell(
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const _SectionTitle(
-                                icon: Icons.flag_outlined,
-                                title: 'Next Steps',
-                              ),
-                              const SizedBox(height: 12),
-                              SizedBox(
-                                width: double.infinity,
-                                child: FilledButton.icon(
-                                  onPressed: () {
-                                    final uid =
-                                        FirebaseAuth.instance.currentUser?.uid;
-                                    if (uid == null) {
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        const SnackBar(
-                                          content: Text(
-                                            'You must be logged in.',
-                                          ),
-                                        ),
-                                      );
-                                      return;
-                                    }
-                                    showTaskCompletionPicker(
-                                      context: context,
-                                      userId: uid,
-                                    );
-                                  },
-                                  icon: const Icon(Icons.add),
-                                  label: const Text('Log New Task Completion'),
-                                  style: FilledButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 14,
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
+                            child: FilledButton.icon(
+                              onPressed: () {
+                                final uid =
+                                    FirebaseAuth.instance.currentUser?.uid;
+                                if (uid == null) {
+                                  ScaffoldMessenger.of(
+                                    context,
+                                  ).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'You must be logged in.',
+                                      ),
                                     ),
-                                    backgroundColor: const Color(
-                                      0xFF3B5CAA,
-                                    ), // azul mais próximo do mock
-                                  ),
+                                  );
+                                  return;
+                                }
+                                showTaskCompletionPicker(
+                                  context: context,
+                                  userId: uid,
+                                );
+                              },
+                              icon: const Icon(Icons.add),
+                              label: const Text('Log New Task Completion'),
+                              style: FilledButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 14,
                                 ),
+                                backgroundColor: const Color(
+                                  0xFF3B5CAA,
+                                ), // azul mais próximo do mock
                               ),
-                              const SizedBox(height: 12),
-                              const _Bullet(
-                                'Complete pending tasks from Chapter 1',
-                              ),
-                              const _Bullet('Review returned submissions'),
-                              const _Bullet('Start Chapter 2 preparations'),
-                            ],
+                            ),
                           ),
-                        ),
+                          const SizedBox(height: 12),
+                        ],
                       ),
                     ),
-                  ],
+                  ),
                 ),
 
                 const SizedBox(height: 12),
@@ -236,98 +232,98 @@ class TraineeDashboardPage extends StatelessWidget {
                 const SizedBox(height: 16),
 
                 // Chapter Progress
-                _CardShell(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const _SectionTitle(
-                          icon: Icons.menu_book_outlined,
-                          title: 'Chapter Progress',
-                          subtitleRight:
-                              'Your advancement through each training chapter',
-                        ),
-                        const SizedBox(height: 12),
-                        for (final ch in chapters) ...[
-                          _ChapterProgressRow(model: ch),
-                          const SizedBox(height: 10),
-                        ],
-                      ],
-                    ),
-                  ),
-                ),
+                // _CardShell(
+                //   child: Padding(
+                //     padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                //     child: Column(
+                //       crossAxisAlignment: CrossAxisAlignment.start,
+                //       children: [
+                //         const _SectionTitle(
+                //           icon: Icons.menu_book_outlined,
+                //           title: 'Chapter Progress',
+                //           subtitleRight:
+                //               'Your advancement through each training chapter',
+                //         ),
+                //         const SizedBox(height: 12),
+                //         for (final ch in chapters) ...[
+                //           _ChapterProgressRow(model: ch),
+                //           const SizedBox(height: 10),
+                //         ],
+                //       ],
+                //     ),
+                //   ),
+                // ),
 
                 const SizedBox(height: 12),
 
                 // My Tasks
-                _CardShell(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const _SectionTitle(
-                          icon: Icons.tune,
-                          title: 'My Tasks',
-                          subtitleRight:
-                              'Track and manage your task submissions',
-                        ),
-                        const SizedBox(height: 6),
-                        TabBar(
-                          isScrollable: true,
-                          indicator: _UnderlineIndicator(),
-                          labelColor: Colors.black87,
-                          unselectedLabelColor: Colors.black54,
-                          tabs: const [
-                            Tab(text: 'All'),
-                            Tab(text: 'Pending'),
-                            Tab(text: 'Submitted'),
-                            Tab(text: 'Approved'),
-                            Tab(text: 'Returned'),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        SizedBox(
-                          height: 440,
-                          child: TabBarView(
-                            children: [
-                              _TaskList(tasks: tasks),
-                              _TaskList(
-                                tasks: tasks
-                                    .where(
-                                      (t) => t.status == TaskStatus.pending,
-                                    )
-                                    .toList(),
-                              ),
-                              _TaskList(
-                                tasks: tasks
-                                    .where(
-                                      (t) => t.status == TaskStatus.submitted,
-                                    )
-                                    .toList(),
-                              ),
-                              _TaskList(
-                                tasks: tasks
-                                    .where(
-                                      (t) => t.status == TaskStatus.approved,
-                                    )
-                                    .toList(),
-                              ),
-                              _TaskList(
-                                tasks: tasks
-                                    .where(
-                                      (t) => t.status == TaskStatus.returned,
-                                    )
-                                    .toList(),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
+                // _CardShell(
+                //   child: Padding(
+                //     padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                //     child: Column(
+                //       crossAxisAlignment: CrossAxisAlignment.start,
+                //       children: [
+                //         const _SectionTitle(
+                //           icon: Icons.tune,
+                //           title: 'My Tasks',
+                //           subtitleRight:
+                //               'Track and manage your task submissions',
+                //         ),
+                //         const SizedBox(height: 6),
+                //         TabBar(
+                //           isScrollable: true,
+                //           indicator: _UnderlineIndicator(),
+                //           labelColor: Colors.black87,
+                //           unselectedLabelColor: Colors.black54,
+                //           tabs: const [
+                //             Tab(text: 'All'),
+                //             Tab(text: 'Pending'),
+                //             Tab(text: 'Submitted'),
+                //             Tab(text: 'Approved'),
+                //             Tab(text: 'Returned'),
+                //           ],
+                //         ),
+                //         const SizedBox(height: 12),
+                //         SizedBox(
+                //           height: 440,
+                //           child: TabBarView(
+                //             children: [
+                //               _TaskList(tasks: tasks),
+                //               _TaskList(
+                //                 tasks: tasks
+                //                     .where(
+                //                       (t) => t.status == TaskStatus.pending,
+                //                     )
+                //                     .toList(),
+                //               ),
+                //               _TaskList(
+                //                 tasks: tasks
+                //                     .where(
+                //                       (t) => t.status == TaskStatus.submitted,
+                //                     )
+                //                     .toList(),
+                //               ),
+                //               _TaskList(
+                //                 tasks: tasks
+                //                     .where(
+                //                       (t) => t.status == TaskStatus.approved,
+                //                     )
+                //                     .toList(),
+                //               ),
+                //               _TaskList(
+                //                 tasks: tasks
+                //                     .where(
+                //                       (t) => t.status == TaskStatus.returned,
+                //                     )
+                //                     .toList(),
+                //               ),
+                //             ],
+                //           ),
+                //         ),
+                //       ],
+                //     ),
+                //   ),
+                // ),
               ],
             );
           },
@@ -578,7 +574,14 @@ class OverallDonutProgress extends StatelessWidget {
                   _log('Sem snapshot de declarações ainda.');
                 }
 
-                final percent = (total == 0) ? 0.0 : (done / total).clamp(0.0, 1.0);
+                double safePercent(int done, int total) {
+                  if (total <= 0) return 0.0;
+                  final p = done / total;
+                  if (p.isNaN || !p.isFinite) return 0.0;
+                  return p.clamp(0.0, 1.0);
+                }
+
+                final percent = safePercent(done, total);
                 _log('done=$done, total=$total → percent=${(percent * 100).toStringAsFixed(1)}%');
 
                 return _DonutProgress(
@@ -695,22 +698,32 @@ class _DonutProgress extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final pct = percent.clamp(0, 1).toDouble();
+    // Normaliza percent (0..1) e evita NaN/Inf
+    double pct = percent;
+    if (pct.isNaN || !pct.isFinite) pct = 0;
+    pct = pct.clamp(0.0, 1.0);
+
+    // Evita valores inválidos de tamanho/espessura
+    final double safeSize = (size.isNaN || !size.isFinite || size <= 0) ? 150.0 : size;
+    final double maxStroke = (safeSize / 2) - 1; // não deixa o deflate inverter o rect
+    double safeStroke = (strokeWidth.isNaN || !strokeWidth.isFinite || strokeWidth <= 0)
+        ? 12.0
+        : strokeWidth.clamp(1.0, maxStroke);
 
     return SizedBox(
-      width: size,
-      height: size,
+      width: safeSize,
+      height: safeSize,
       child: Stack(
         alignment: Alignment.center,
         children: [
           CustomPaint(
-            size: Size.square(size),
+            size: Size.square(safeSize),
             painter: _DonutPainter(
               pct: pct,
-              strokeWidth: strokeWidth,
+              strokeWidth: safeStroke,
               bg: backgroundColor,
               fg: progressColor,
-              minSweepRad: minSweepDegrees * math.pi / 180,
+              minSweepRad: (minSweepDegrees.isNaN ? 6.0 : minSweepDegrees) * math.pi / 180,
             ),
           ),
           Column(
@@ -720,16 +733,13 @@ class _DonutProgress extends StatelessWidget {
                 '${(pct * 100).toStringAsFixed(0)}%',
                 style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                   fontWeight: FontWeight.w800,
-                  letterSpacing: -0.5,
                 ),
               ),
-              const SizedBox(height: 4),
-              Text(
-                'Complete',
-                style: Theme.of(
-                  context,
-                ).textTheme.labelLarge?.copyWith(color: Colors.black45),
-              ),
+              if (label.isNotEmpty)
+                Text(
+                  label,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.black45),
+                ),
             ],
           ),
         ],
@@ -757,39 +767,46 @@ class _DonutPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final rect = Offset.zero & size;
 
-    // Anel de fundo
     final bgPaint = Paint()
       ..isAntiAlias = true
       ..style = PaintingStyle.stroke
       ..strokeWidth = strokeWidth
       ..strokeCap = StrokeCap.round
       ..color = bg;
-    canvas.drawArc(
-      rect.deflate(strokeWidth / 2),
-      0,
-      2 * math.pi,
-      false,
-      bgPaint,
-    );
 
-    // Progresso (começa no topo)
-    if (pct > 0) {
-      final sweep = math.max(pct * 2 * math.pi, minSweepRad);
-      final fgPaint = Paint()
-        ..isAntiAlias = true
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = strokeWidth
-        ..strokeCap = StrokeCap.round
-        ..color = fg;
-      // -pi/2 = 12h
-      canvas.drawArc(
-        rect.deflate(strokeWidth / 2),
-        -math.pi / 2,
-        math.min(sweep, 2 * math.pi - 0.01),
-        false,
-        fgPaint,
-      );
-    }
+    // Corrige strokeWidth inválido
+    final double sw = (strokeWidth.isNaN || !strokeWidth.isFinite || strokeWidth <= 0)
+        ? 12.0
+        : strokeWidth.clamp(1.0, (size.shortestSide / 2) - 1);
+
+    // Fundo
+    canvas.drawArc(rect.deflate(sw / 2), 0, 2 * math.pi, false, bgPaint..strokeWidth = sw);
+
+    // Se pct inválido, não desenha progresso
+    if (pct.isNaN || !pct.isFinite || pct <= 0) return;
+
+    double sweep = pct * 2 * math.pi;
+    final double minSweep = (minSweepRad.isNaN || !minSweepRad.isFinite || minSweepRad <= 0)
+        ? (6 * math.pi / 180)
+        : minSweepRad;
+
+    sweep = math.max(sweep, minSweep);
+    if (!sweep.isFinite || sweep <= 0) return;
+
+    final fgPaint = Paint()
+      ..isAntiAlias = true
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = sw
+      ..strokeCap = StrokeCap.round
+      ..color = fg;
+
+    canvas.drawArc(
+      rect.deflate(sw / 2),
+      -math.pi / 2,
+      math.min(sweep, (2 * math.pi) - 0.01), // nunca 2π exato
+      false,
+      fgPaint,
+    );
   }
 
   @override

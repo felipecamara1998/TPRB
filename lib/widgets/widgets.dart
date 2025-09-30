@@ -6,7 +6,7 @@ class CustomTopBar extends StatelessWidget implements PreferredSizeWidget {
   final String? userId;        // de preferência, UID
   final String? email;         // fallback por e-mail
   final VoidCallback? onLogout;
-  final PreferredSizeWidget? bottom; // <<< NOVO: suporte a TabBar/aba inferior
+  final PreferredSizeWidget? bottom;
 
   const CustomTopBar({
     super.key,
@@ -18,46 +18,27 @@ class CustomTopBar extends StatelessWidget implements PreferredSizeWidget {
 
   // soma a altura do bottom ao AppBar padrão
   @override
-  Size get preferredSize =>
-      Size.fromHeight(kToolbarHeight + (bottom?.preferredSize.height ?? 0));
-
-  Stream<Map<String, dynamic>?> _userStream() {
-    final col = FirebaseFirestore.instance.collection('users');
-
-    if (userId != null && userId!.isNotEmpty) {
-      return col.doc(userId).snapshots().map((d) => d.data());
-    }
-    if (email != null && email!.isNotEmpty) {
-      return col.where('email', isEqualTo: email).limit(1).snapshots().map(
-            (qs) => qs.docs.isEmpty ? null : qs.docs.first.data(),
-      );
-    }
-    final current = FirebaseAuth.instance.currentUser;
-    if (current != null) {
-      return col.doc(current.uid).snapshots().map((d) => d.data());
-    }
-    return const Stream<Map<String, dynamic>?>.empty();
+  Size get preferredSize {
+    final base = const Size.fromHeight(kToolbarHeight);
+    if (bottom == null) return base;
+    return Size(base.width, base.height + bottom!.preferredSize.height);
   }
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<Map<String, dynamic>?>(
-      stream: _userStream(),
-      builder: (context, snap) {
-        final data = snap.data ?? const {};
-        final userName = (data['userName'] ?? data['name'] ?? '') as String;
-        final userRole = (data['userRole'] ?? data['role'] ?? '') as String;
-        final vessel   = (data['vessel'] ?? '') as String;
-        final initials = _initials(
-          data['initials'] as String?,
-          userName,
-          email ?? FirebaseAuth.instance.currentUser?.email,
-        );
+    final isNarrow = MediaQuery.of(context).size.width < 500;
 
-        final subtitle = [
-          if (userRole.isNotEmpty) userRole,
-          if (vessel.isNotEmpty) vessel,
-        ].join(' • ');
+    // Puxa nome/subtitle do usuário (seu StreamBuilder original pode estar diferente;
+    // mantendo a ideia de obter userName/subtitle com segurança).
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: (userId != null)
+          ? FirebaseFirestore.instance.collection('users').doc(userId).snapshots()
+          : null,
+      builder: (context, snap) {
+        final data = snap.data?.data();
+        final userName = (data?['userName'] ?? '').toString();
+        final subtitle = (data?['vessel'] ?? data?['userRole'] ?? '').toString();
+        final initials = _initials(userName.isNotEmpty ? userName : email);
 
         return AppBar(
           elevation: 0,
@@ -78,77 +59,115 @@ class CustomTopBar extends StatelessWidget implements PreferredSizeWidget {
                 child: const Icon(Icons.book, color: Colors.white, size: 20),
               ),
               const SizedBox(width: 12),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: const [
-                  Text('TPRB',
-                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
-                  Text('Training Performance Record Book',
-                      style: TextStyle(fontSize: 12)),
-                ],
+
+              // BLOCO ESQUERDO (logo + título/subtítulo) → flexível
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Text(
+                      'TPRB',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+                    ),
+                    if (!isNarrow)
+                      const Text(
+                        'Training Performance Record Book',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 12),
+                      ),
+                  ],
+                ),
               ),
             ],
           ),
+
+          // AÇÕES (lado direito) → adaptam no mobile
           actions: [
             if (snap.connectionState == ConnectionState.waiting)
               const Padding(
                 padding: EdgeInsets.only(right: 12),
-                child: Center(
-                  child: SizedBox(
-                    width: 18, height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                ),
+                child: Center(child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))),
               )
             else ...[
-              Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    userName.isNotEmpty ? userName : (email ?? 'User'),
-                    style: const TextStyle(fontWeight: FontWeight.w600),
+              if (!isNarrow) // desktop/tablet: mostra nome + subtítulo
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 220),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(
+                          userName.isNotEmpty ? userName : (email ?? 'User'),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          subtitle.isNotEmpty ? subtitle : '—',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 11, color: Colors.black54),
+                        ),
+                      ],
+                    ),
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitle.isNotEmpty ? subtitle : '—',
-                    style: const TextStyle(fontSize: 11, color: Colors.black54),
-                  ),
-                ],
-              ),
-              const SizedBox(width: 12),
+                ),
+
+              // Avatar sempre visível
               CircleAvatar(
                 radius: 16,
                 backgroundColor: const Color(0xFFDDE6F3),
                 child: Text(initials, style: const TextStyle(color: Colors.black87)),
               ),
               const SizedBox(width: 8),
-              TextButton.icon(
-                onPressed: onLogout ?? () async {
-                  await FirebaseAuth.instance.signOut();
-                  if (context.mounted) {
-                    Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
-                    print('Logout');
-                  }
-                },
-                icon: const Icon(Icons.logout, size: 18),
-                label: const Text('Logout'),
-              ),
+
+              // Logout (ícone no mobile, botão no desktop)
+              if (isNarrow)
+                IconButton(
+                  tooltip: 'Logout',
+                  onPressed: onLogout ?? () async {
+                    await FirebaseAuth.instance.signOut();
+                    if (context.mounted) {
+                      Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+                    }
+                  },
+                  icon: const Icon(Icons.logout, size: 20),
+                )
+              else
+                TextButton.icon(
+                  onPressed: onLogout ?? () async {
+                    await FirebaseAuth.instance.signOut();
+                    if (context.mounted) {
+                      Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+                    }
+                  },
+                  icon: const Icon(Icons.logout, size: 18),
+                  label: const Text('Logout'),
+                ),
               const SizedBox(width: 8),
             ],
           ],
-          bottom: bottom, // <<< usa o bottom recebido
+          bottom: bottom,
         );
       },
     );
   }
 
-  static String _initials(String? fromDb, String name, String? mail) {
-    if (fromDb != null && fromDb.trim().isNotEmpty) return fromDb.trim();
-    final words = name.trim().split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
-    if (words.length >= 2) return (words.first[0] + words.last[0]).toUpperCase();
-    if (words.length == 1) return words.first.substring(0, 1).toUpperCase();
-    if (mail != null && mail.isNotEmpty) return mail.substring(0, 1).toUpperCase();
-    return '?';
+  static String _initials(String? from) {
+    final s = (from ?? '').trim();
+    if (s.isEmpty) return 'US';
+    final parts = s.split(RegExp(r'\s+')).where((e) => e.isNotEmpty).toList();
+    if (parts.length == 1) {
+      return parts.first.characters.take(2).toString().toUpperCase();
+    }
+    return (parts.first.characters.first + parts.last.characters.first).toUpperCase();
   }
 }
 
