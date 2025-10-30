@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:tprb/model/program_pdf_report.dart';
+import 'package:tprb/widgets/program_pdf_export_button.dart';
 
 // ───────────────────────── Models ─────────────────────────
 
@@ -94,6 +96,8 @@ class _ProgramTasksPageState extends State<ProgramTasksPage> {
     _search.dispose();
     super.dispose();
   }
+
+
 
   // ───────────────── Firestore: program (chapters/tasks) ─────────────────
 
@@ -290,6 +294,34 @@ class _ProgramTasksPageState extends State<ProgramTasksPage> {
         centerTitle: true,
         elevation: 0,
         surfaceTintColor: Colors.white,
+        actions: [
+          StreamBuilder<ProgramModel>(
+            stream: _program$,
+            builder: (context, progSnap) {
+              if (!progSnap.hasData) return const SizedBox.shrink();
+              final program = progSnap.data!;
+
+              return StreamBuilder<Map<String, TaskStatus>>(
+                stream: _status$,
+                builder: (context, statusSnap) {
+                  if (!statusSnap.hasData) return const SizedBox.shrink();
+
+                  // Se preferir, pode passar o Map<TaskStatus> direto.
+                  // O builder acima já sabe acessar getters como approvedCount/pendingCount/etc.
+                  final statusByTaskId = statusSnap.data!;
+
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: ProgramPdfExportButton(
+                      program: program,
+                      statusByTaskId: statusByTaskId,   // <- agora funciona mesmo sem toJson()
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+        ],
       ),
       body: StreamBuilder<ProgramModel>(
         stream: _program$,

@@ -69,7 +69,7 @@ class FleetOverviewPage extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const _SectionTitle('Create Training Campaign'),
+                            const _SectionTitle('Create Training Program'),
                             const SizedBox(height: 8),
                             const Text(
                               'Assign existing training programs to users by vessel, role, groups, or individually.',
@@ -80,7 +80,7 @@ class FleetOverviewPage extends StatelessWidget {
                               alignment: Alignment.centerLeft,
                               child: ElevatedButton.icon(
                                 icon: const Icon(Icons.campaign_outlined),
-                                label: const Text('Open campaign creator'),
+                                label: const Text('Open program creator'),
                                 onPressed: () {
                                   Navigator.of(context).push(
                                     MaterialPageRoute(
@@ -707,10 +707,10 @@ class _CampaignsPanelState extends State<_CampaignsPanel> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const _SectionTitle('Active Campaigns'),
+        const _SectionTitle('Active Programs'),
         const SizedBox(height: 8),
         Text(
-          'Review current campaigns, check progress, and manage status.',
+          'Review current programs, check progress, and manage status.',
           style: TextStyle(color: Colors.grey[700]),
         ),
         const SizedBox(height: 12),
@@ -725,7 +725,7 @@ class _CampaignsPanelState extends State<_CampaignsPanel> {
               width: 320,
               child: TextField(
                 decoration: const InputDecoration(
-                  hintText: 'Search by campaign or program...',
+                  hintText: 'Search by program...',
                   prefixIcon: Icon(Icons.search),
                   border: OutlineInputBorder(),
                   isDense: true,
@@ -793,7 +793,7 @@ class _CampaignsPanelState extends State<_CampaignsPanel> {
               if (filtered.isEmpty) {
                 return const Center(child: Padding(
                   padding: EdgeInsets.all(24),
-                  child: Text('No campaigns found'),
+                  child: Text('No programs found'),
                 ));
               }
 
@@ -910,7 +910,7 @@ class _CampaignItemTile extends StatelessWidget {
           .doc(doc.id)
           .update({'status': newStatus});
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Campaign ${doc.id} set to $newStatus')),
+        SnackBar(content: Text('Program ${doc.id} set to $newStatus')),
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -941,7 +941,7 @@ class _CampaignItemTile extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  const Text('Campaign Details', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                  const Text('Program Details', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
                   const Spacer(),
                   _CampaignStatusChip(status: (data['status'] ?? 'active').toString()),
                 ],

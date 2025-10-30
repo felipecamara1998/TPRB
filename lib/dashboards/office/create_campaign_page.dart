@@ -52,7 +52,7 @@ class _CreateCampaignPageState extends State<CreateCampaignPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Create Training Campaign', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700)),
+                const Text('Create Training Program', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700)),
                 const SizedBox(height: 6),
                 Text('Assign published programs to users (individually, by vessel, roles, or groups).', style: TextStyle(color: Colors.grey[700])),
                 const SizedBox(height: 16),
@@ -61,8 +61,8 @@ class _CreateCampaignPageState extends State<CreateCampaignPage> {
                 TextFormField(
                   controller: _campaignNameCtrl,
                   decoration: const InputDecoration(
-                    labelText: 'Campaign name',
-                    hintText: 'e.g., Q4 Familiarization Drive',
+                    labelText: 'Program name',
+                    hintText: 'e.g., Familiarization verification',
                     border: OutlineInputBorder(),
                   ),
                   validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
