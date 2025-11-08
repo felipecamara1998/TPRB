@@ -1,30 +1,17 @@
-// FILE: lib/widgets/program_pdf_export_button.dart
-// Botão que BUSCA automaticamente o userName do Firestore (users/{uid})
-// e gera/compartilha o PDF usando o builder do arquivo program_pdf_report.dart.
-//
-// Requisitos no pubspec.yaml (você provavelmente já tem):
-//   firebase_auth: ^5.1.4
-//   cloud_firestore: ^5.4.4
-//   printing: ^5.12.0
-//
-// Ajuste o import abaixo para o caminho real do seu builder:
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:printing/printing.dart';
 
-import '../model/program_pdf_report.dart'; // <- ajuste se seu builder estiver em outro caminho
+import '../model/program_pdf_report.dart';
 
 class ProgramPdfExportButton extends StatefulWidget {
-  /// Program model-like (precisa ter: title, chapters[..].title/tasks[..].id/title/qty)
+  /// Pode ser ProgramModel ou Map
   final dynamic program;
 
-  /// Map de status por taskId (TaskStatus-like):
-  /// requiredQty / approvedCount / pendingCount / status / approvedAt / declaredAt / lastApproverName
+  /// Pode ser Map<String, TaskStatus> ou Map<String, dynamic>
   final Map<String, dynamic> statusByTaskId;
 
-  /// Opcional. Se não for passado ou vier vazio, o botão busca em:
-  /// users/{uid}.{userName|name|fullName|displayName} e cai para o email.
   final String? traineeName;
 
   const ProgramPdfExportButton({
@@ -46,40 +33,64 @@ class _ProgramPdfExportButtonState extends State<ProgramPdfExportButton> {
     return FilledButton.icon(
       icon: _busy
           ? const SizedBox(
-          width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+        width: 16,
+        height: 16,
+        child: CircularProgressIndicator(strokeWidth: 2),
+      )
           : const Icon(Icons.picture_as_pdf),
       label: const Text('Exportar PDF'),
-      onPressed: _busy ? null : _onExport,
+      onPressed: _busy ? null : () => _onExport(context),
     );
   }
 
-  Future<void> _onExport() async {
+  Future<void> _onExport(BuildContext context) async {
     setState(() => _busy = true);
     try {
+      // 1. trainee
       final trainee = await _resolveTraineeName(widget.traineeName);
+
+      // 2. normaliza programa (ProgramModel -> Map)
+      final programMap = _normalizeProgram(widget.program);
+
+      // 3. busca status completo no Firestore (usa o que já veio da tela como fallback)
+      final statusMap = await _fetchFullStatusMapFromFirestore(
+        programMap: programMap,
+        fallback: widget.statusByTaskId,
+      );
+
+      // 4. gera PDF
       final bytes = await buildProgramReportPdf(
-        program: widget.program,
-        statusByTaskId: widget.statusByTaskId,
+        program: programMap,
+        statusByTaskId: statusMap,
         traineeName: trainee,
       );
-      final programTitle = _safeString(_sel(widget.program, 'title')).replaceAll('/', '-');
-      await Printing.sharePdf(bytes: bytes, filename: 'Program-$programTitle.pdf');
+
+      final programTitle =
+      (programMap['title'] ?? 'Program').toString().replaceAll('/', '-');
+
+      await Printing.sharePdf(
+        bytes: bytes,
+        filename: 'Program-$programTitle.pdf',
+      );
+    } catch (e, st) {
+      debugPrint('Erro ao exportar PDF: $e\n$st');
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Não foi possível gerar o PDF: $e')),
+        );
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
   Future<String> _resolveTraineeName(String? provided) async {
-    // 1) Se veio preenchido, usa
     final p = (provided ?? '').trim();
     if (p.isNotEmpty) return p;
 
-    // 2) Tenta FirebaseAuth
     final user = FirebaseAuth.instance.currentUser;
-    String? candidate = user?.displayName;
-    candidate ??= user?.email;
+    String? candidate = user?.displayName ?? user?.email;
 
-    // 3) Tenta Firestore users/{uid}
     try {
       if (user != null) {
         final snap = await FirebaseFirestore.instance
@@ -88,34 +99,150 @@ class _ProgramPdfExportButtonState extends State<ProgramPdfExportButton> {
             .get();
         final m = snap.data();
         if (m != null) {
-          candidate = (m['userName'] as String?) ??
-              (m['name'] as String?) ??
-              (m['fullName'] as String?) ??
-              (m['displayName'] as String?) ??
-              (m['firstName'] != null && m['lastName'] != null
-                  ? '${m['firstName']} ${m['lastName']}'
-                  : null) ??
-              candidate; // mantém displayName/email como fallback final
+          candidate =
+              (m['userName'] as String?) ??
+                  (m['name'] as String?) ??
+                  (m['fullName'] as String?) ??
+                  (m['displayName'] as String?) ??
+                  candidate;
         }
       }
-    } catch (_) {
-      // ignora erros silenciosamente e usa o melhor candidato
-    }
+    } catch (_) {}
 
     return candidate ?? '';
   }
-}
 
-/// Helpers mínimos (espelham os do builder para nome do arquivo)
-dynamic _sel(dynamic o, String key) {
-  if (o == null) return null;
-  if (o is Map) return o[key];
-  try {
-    return (o as dynamic).toJson()[key];
-  } catch (_) {
-    return null;
+  /// Busca no Firestore as declarações daquele programa e monta
+  /// um mapa por taskId com declaredAt/approvedAt/lastApproverName.
+  ///
+  /// Se não achar no Firestore, usa o que veio em [fallback].
+  Future<Map<String, dynamic>> _fetchFullStatusMapFromFirestore({
+    required Map<String, dynamic> programMap,
+    required Map<String, dynamic> fallback,
+  }) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      // sem usuário, devolve o que já tinha
+      return _normalizeStatusMap(fallback);
+    }
+
+    final programId = programMap['programId']?.toString();
+    final col = FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .collection('task_declarations');
+
+    QuerySnapshot<Map<String, dynamic>> snap;
+    if (programId != null && programId.isNotEmpty) {
+      snap = await col.where('programId', isEqualTo: programId).get();
+    } else {
+      snap = await col.get();
+    }
+
+    final result = <String, dynamic>{};
+
+    for (final doc in snap.docs) {
+      final d = doc.data();
+
+      // pelo teu print, o taskId parece estar salvo no documento.
+      // se não estiver, tenta doc.id (mas aí só funciona se você salvou com o id certo)
+      final taskId =
+      (d['taskId'] ?? d['task_id'] ?? d['task'] ?? doc.id).toString();
+
+      result[taskId] = {
+        'declaredAt': d['declaredAt'],
+        'approvedAt': d['approvedAt'],
+        'lastApproverName': d['lastApproverName'],
+        'approvedCount': d['approvedCount'],
+        'pendingCount': d['pendingCount'],
+      };
+    }
+
+    // agora mistura com o que já tinha (pra pegar approvedCount etc. que vieram do stream)
+    final normalizedFallback = _normalizeStatusMap(fallback);
+    normalizedFallback.forEach((taskId, value) {
+      result.putIfAbsent(taskId, () => value);
+    });
+
+    return result;
+  }
+
+  /// Converte ProgramModel -> Map<String, dynamic>
+  Map<String, dynamic> _normalizeProgram(dynamic program) {
+    if (program is Map<String, dynamic>) return program;
+
+    try {
+      final chapters = (program.chapters as List).map((chapter) {
+        final tasks = (chapter.tasks as List).map((task) {
+          return {
+            'id': task.id,
+            'title': task.title,
+            'qty': task.qty,
+          };
+        }).toList();
+
+        return {
+          'id': chapter.id,
+          'title': chapter.title,
+          'tasks': tasks,
+        };
+      }).toList();
+
+      return {
+        'programId': program.programId,
+        'title': program.title,
+        'chapters': chapters,
+      };
+    } catch (e) {
+      throw Exception(
+          'ProgramPdfExportButton: não consegui converter ${program.runtimeType} para Map. Detalhe: $e');
+    }
+  }
+
+  /// Converte Map<String, TaskStatus> -> Map<String, Map<String, dynamic>>
+  Map<String, dynamic> _normalizeStatusMap(Map<String, dynamic> original) {
+    final result = <String, dynamic>{};
+
+    original.forEach((taskId, value) {
+      if (value == null) {
+        result[taskId] = {};
+        return;
+      }
+
+      if (value is Map<String, dynamic>) {
+        result[taskId] = value;
+        return;
+      }
+
+      // tentar tratar como TaskStatus
+      try {
+        final map = <String, dynamic>{};
+        // ignore: avoid_dynamic_calls
+        map['status'] = value.status;
+        // ignore: avoid_dynamic_calls
+        map['requiredQty'] = value.requiredQty;
+        // ignore: avoid_dynamic_calls
+        map['approvedCount'] = value.approvedCount;
+        // ignore: avoid_dynamic_calls
+        map['pendingCount'] = value.pendingCount;
+        // ignore: avoid_dynamic_calls
+        map['approvedAt'] = value.approvedAt;
+        // ignore: avoid_dynamic_calls
+        map['declaredAt'] = value.declaredAt;
+        // ignore: avoid_dynamic_calls
+        map['lastApproverName'] =
+            value.lastApproverName ??
+                value.approvedBy ??
+                value.declaredBy ??
+                value.lastBy;
+        result[taskId] = map;
+      } catch (_) {
+        result[taskId] = {
+          'status': value.toString(),
+        };
+      }
+    });
+
+    return result;
   }
 }
-
-String _safeString(dynamic v, [String def = '']) =>
-    v == null ? def : v.toString();

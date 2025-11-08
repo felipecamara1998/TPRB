@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:tprb/dashboards/office/create_campaign_page.dart';
 import 'package:tprb/widgets/widgets.dart' as ui;
 import 'package:tprb/widgets/widgets.dart';
+import 'package:tprb/dashboards/office/program_assignees_page.dart';
 
 // Mantém seus nomes antigos funcionando, apontando para os públicos do widgets.dart
 typedef _Card = ui.CardBox;
@@ -868,11 +869,23 @@ class _CampaignItemTile extends StatelessWidget {
       trailing: Wrap(
         spacing: 8,
         children: [
-          TextButton.icon(
-            onPressed: () => _showDetails(context, data),
-            icon: const Icon(Icons.info_outline),
-            label: const Text('Details'),
-          ),
+          // Exemplo dentro de um ListTile ou Card de programa
+          FilledButton(
+            onPressed: () {
+              final data = doc.data() as Map<String, dynamic>;
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => ProgramAssigneesPage(
+                    campaignId: doc.id,                              // p/ ler targetUserIds
+                    programId: data['programId'] as String,          // p/ abrir o status
+                    programTitle: (data['programTitle'] ?? data['name'] ?? '') as String,
+                  ),
+                ),
+              );
+            },
+            child: const Text('Details'),
+          )
+          ,
           if (status == 'active')
             OutlinedButton.icon(
               onPressed: () => _updateStatus(context, 'paused'),

@@ -63,6 +63,7 @@ class ProgramTasksPage extends StatefulWidget {
   final String programTitle;
   final String? campaignId;
   final String? campaignName;
+  final bool? readOnly;
 
   const ProgramTasksPage({
     super.key,
@@ -71,6 +72,7 @@ class ProgramTasksPage extends StatefulWidget {
     required this.programTitle,
     this.campaignId,
     this.campaignName,
+    this.readOnly
   });
 
   @override
@@ -83,6 +85,7 @@ class _ProgramTasksPageState extends State<ProgramTasksPage> {
 
   late final Stream<ProgramModel> _program$;
   late final Stream<Map<String, TaskStatus>> _status$;
+  bool get isReadOnly => widget.readOnly == true;
 
   @override
   void initState() {
@@ -200,6 +203,7 @@ class _ProgramTasksPageState extends State<ProgramTasksPage> {
       ),
     );
     if (ok != true) return;
+    if (isReadOnly) return;
 
     final safeTask = task.id.replaceAll('.', '·');
     final docId = (campaignId != null && campaignId.isNotEmpty)
@@ -427,7 +431,7 @@ class _ProgramTasksPageState extends State<ProgramTasksPage> {
                             final done = st?.isDone ?? false;
 
                             // Permitir declarar somente se (aprovadas + pendentes) < required
-                            final canDeclare = !done && (appr + pend) < req;
+                            final canDeclare = !isReadOnly && !done && (appr + pend) < req;
 
                             // ícone
                             IconData icon;
@@ -486,25 +490,25 @@ class _ProgramTasksPageState extends State<ProgramTasksPage> {
                                         Text(t.title, style: const TextStyle(fontWeight: FontWeight.w600)),
                                         const SizedBox(height: 2),
                                         Text(t.id, style: TextStyle(color: Colors.black.withOpacity(.55))),
+                                        if (right.isNotEmpty) Text(right, style: TextStyle(color: rightColor)),
+                                        if (req > 1 && !done)
+                                          Padding(
+                                            padding: const EdgeInsets.only(top: 2),
+                                            child: Text('Remaining: ${st?.remaining ?? (req)}',
+                                                style: const TextStyle(fontSize: 12, color: Colors.black54)),
+                                          ),
                                       ],
                                     ),
                                   ),
                                   Column(
                                     crossAxisAlignment: CrossAxisAlignment.end,
                                     children: [
-                                      if (right.isNotEmpty) Text(right, style: TextStyle(color: rightColor)),
-                                      if (req > 1 && !done)
-                                        Padding(
-                                          padding: const EdgeInsets.only(top: 2),
-                                          child: Text('Remaining: ${st?.remaining ?? (req)}',
-                                              style: const TextStyle(fontSize: 12, color: Colors.black54)),
-                                        ),
                                       if (canDeclare) ...[
                                         const SizedBox(height: 6),
                                         TextButton.icon(
                                           icon: const Icon(Icons.edit_note_rounded, size: 18),
                                           label: const Text('Declare'),
-                                          onPressed: () => _declareOnce(
+                                          onPressed: isReadOnly ? null : () => _declareOnce(
                                             userId: widget.userId,
                                             programId: widget.programId,
                                             programTitle: widget.programTitle,
