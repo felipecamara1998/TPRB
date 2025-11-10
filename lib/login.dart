@@ -1,12 +1,13 @@
-import 'package:flutter/material.dart';
-import 'package:tprb/dashboards/supervisor/supervisor.dart';
-import 'dashboards/trainee/trainee.dart';
-import 'dashboards/admin/admin.dart';
-import 'dashboards/office/office.dart';
-
+import 'dart:ui'; // para o ImageFilter.blur
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+
+// importe suas páginas reais
+import 'package:tprb/dashboards/trainee/trainee.dart';
+import 'package:tprb/dashboards/supervisor/supervisor.dart';
+import 'package:tprb/dashboards/admin/admin.dart';
+import 'package:tprb/dashboards/office/office.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -20,21 +21,8 @@ class _LoginPageState extends State<LoginPage> {
   final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   final _passwordFocus = FocusNode();
-
   bool _busy = false;
   bool _obscure = true;
-
-  @override
-  void initState() {
-    super.initState();
-    // Se já estiver logado, pula direto para o dashboard correspondente
-    final user = FirebaseAuth.instance.currentUser;
-    if (user != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _routeUser(user);
-      });
-    }
-  }
 
   @override
   void dispose() {
@@ -53,11 +41,8 @@ class _LoginPageState extends State<LoginPage> {
     try {
       final email = _emailCtrl.text.trim();
       final password = _passwordCtrl.text;
-
-      final cred = await FirebaseAuth.instance.signInWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
+      final cred = await FirebaseAuth.instance
+          .signInWithEmailAndPassword(email: email, password: password);
 
       await _routeUser(cred.user!);
     } on FirebaseAuthException catch (e) {
@@ -67,11 +52,9 @@ class _LoginPageState extends State<LoginPage> {
         'user-not-found': 'Usuário não encontrado.',
         'wrong-password': 'Senha incorreta.',
         'too-many-requests': 'Muitas tentativas. Tente mais tarde.',
-        'network-request-failed': 'Sem conexão com a internet.',
-        // genérico
+        'network-request-failed': 'Sem conexão à internet.',
       };
-      final msg = map[e.code] ?? 'Falha no login. (code: ${e.code})';
-      _showSnack(msg);
+      _showSnack(map[e.code] ?? 'Falha ao entrar. ${e.message ?? ''}');
     } catch (e) {
       _showSnack('Erro inesperado: $e');
     } finally {
@@ -81,36 +64,32 @@ class _LoginPageState extends State<LoginPage> {
 
   Future<void> _routeUser(User user) async {
     try {
-      // Busca role no Firestore
       final doc =
       await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
-
-      final role = (doc.data()?['role'] as String?)?.trim() ?? '';
+      final data = doc.data() ?? {};
+      final role = (data['role'] as String?)?.trim() ?? '';
+      final mustChange = data['mustChangePassword'] as bool? ?? false;
 
       if (role.isEmpty) {
-        _showSnack(
-            'Seu perfil ainda não possui um papel (role) definido. Contate o administrador.');
+        _showSnack('Seu perfil ainda não possui um papel definido.');
         return;
       }
 
-      // Navega e remove a tela de login do histórico
-      Widget page;
-      switch (role.toLowerCase()) {
-        case 'admin':
-          page = const AdminPage();
-          break;
-        case 'supervisor':
-          page = const OfficerReviewDashboardPage();
-          break;
-        case 'office':
-          page = const FleetOverviewPage();
-          break;
-        case 'trainee':
-          page = const TraineeDashboardPage();
-          break;
-        default:
-          _showSnack('Role desconhecido: $role');
-          return;
+      if (mustChange) {
+        if (!mounted) return;
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(
+            builder: (_) => ChangePasswordPage(user: user, role: role),
+          ),
+              (_) => false,
+        );
+        return;
+      }
+
+      final page = _pageForRole(role);
+      if (page == null) {
+        _showSnack('Role desconhecido: $role');
+        return;
       }
 
       if (!mounted) return;
@@ -123,22 +102,36 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
+  Widget? _pageForRole(String role) {
+    switch (role.toLowerCase()) {
+      case 'trainee':
+        return const TraineeDashboardPage();
+      case 'supervisor':
+        return const OfficerReviewDashboardPage();
+      case 'admin':
+        return const AdminPage();
+      case 'office':
+        return const FleetOverviewPage();
+      default:
+        return null;
+    }
+  }
+
   Future<void> _sendReset() async {
     final email = _emailCtrl.text.trim();
     if (email.isEmpty) {
-      _showSnack('Informe seu e-mail para recuperar a senha.');
+      _showSnack('Informe seu e-mail.');
       return;
     }
     try {
       await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
-      _showSnack('Redefinition email sent to $email');
+      _showSnack('E-mail de redefinição enviado para $email');
     } on FirebaseAuthException catch (e) {
       final map = <String, String>{
-        'invalid-email': 'Invalid email.',
-        'user-not-found': 'This email is not registered.',
+        'invalid-email': 'E-mail inválido.',
+        'user-not-found': 'Usuário não encontrado.',
       };
-      final msg = map[e.code] ?? 'Não foi possível enviar o e-mail. (code: ${e.code})';
-      _showSnack(msg);
+      _showSnack(map[e.code] ?? 'Erro ao enviar e-mail.');
     } catch (e) {
       _showSnack('Erro inesperado: $e');
     }
@@ -146,8 +139,9 @@ class _LoginPageState extends State<LoginPage> {
 
   void _showSnack(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating),
+    );
   }
 
   @override
@@ -159,204 +153,409 @@ class _LoginPageState extends State<LoginPage> {
       backgroundColor: const Color(0xFFF6F8FB),
       body: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 950),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: isWide ? _buildWide(theme) : _buildNarrow(theme),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildNarrow(ThemeData theme) {
-    return SingleChildScrollView(
-      child: _LoginCard(
-        child: _form(theme),
-      ),
-    );
-  }
-
-  Widget _buildWide(ThemeData theme) {
-    return Row(
-      children: [
-        // Lado esquerdo com branding
-        Expanded(
-          child: _BrandingPanel(
-            title: 'TPRB',
-            subtitle: 'Training Program • Odfjell',
-          ),
-        ),
-        const SizedBox(width: 16),
-        // Lado direito: card de login
-        Expanded(
-          child: SingleChildScrollView(
-            child: _LoginCard(
-              child: _form(theme),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _form(ThemeData theme) {
-    return Form(
-      key: _formKey,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text('Sign in',
-              style: theme.textTheme.titleLarge
-                  ?.copyWith(fontWeight: FontWeight.w800)),
-          const SizedBox(height: 16),
-
-          // Email
-          TextFormField(
-            controller: _emailCtrl,
-            textInputAction: TextInputAction.next,
-            onFieldSubmitted: (_) => _passwordFocus.requestFocus(),
-            keyboardType: TextInputType.emailAddress,
-            decoration: const InputDecoration(
-              labelText: 'Email',
-              hintText: 'user@company.com',
-              border: OutlineInputBorder(),
-              prefixIcon: Icon(Icons.alternate_email),
-            ),
-            validator: (v) {
-              final value = v?.trim() ?? '';
-              if (value.isEmpty) return 'Inform your email';
-              final rx = RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$');
-              if (!rx.hasMatch(value)) return 'Invalid email';
-              return null;
-            },
-          ),
-          const SizedBox(height: 12),
-
-          // Password
-          TextFormField(
-            controller: _passwordCtrl,
-            focusNode: _passwordFocus,
-            obscureText: _obscure,
-            onFieldSubmitted: (_) => _signIn(),
-            decoration: InputDecoration(
-              labelText: 'Password',
-              border: const OutlineInputBorder(),
-              prefixIcon: const Icon(Icons.lock_outline),
-              suffixIcon: IconButton(
-                tooltip: _obscure ? 'Show password' : 'Hide password',
-                icon: Icon(_obscure ? Icons.visibility : Icons.visibility_off),
-                onPressed: () => setState(() => _obscure = !_obscure),
-              ),
-            ),
-            validator: (v) {
-              final value = v ?? '';
-              if (value.isEmpty) return 'Inform your password';
-              return null;
-            },
-          ),
-          const SizedBox(height: 8),
-
-          // Esqueci minha senha
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton(
-              onPressed: _busy ? null : _sendReset,
-              child: const Text('Forgot my password'),
-            ),
-          ),
-          const SizedBox(height: 8),
-
-          // Botão entrar
-          FilledButton.icon(
-            onPressed: _busy ? null : _signIn,
-            icon: _busy
-                ? const SizedBox(
-                width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                : const Icon(Icons.login),
-            label: Text(_busy ? 'Logging in...' : 'Log in'),
-            style: FilledButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// ---------- UI Auxiliar ----------
-
-class _LoginCard extends StatelessWidget {
-  final Widget child;
-  const _LoginCard({required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      constraints: const BoxConstraints(maxWidth: 520),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: const [
-          BoxShadow(color: Color(0x14000000), blurRadius: 10, offset: Offset(0, 4)),
-        ],
-      ),
-      padding: const EdgeInsets.all(20),
-      child: child,
-    );
-  }
-}
-
-class _BrandingPanel extends StatelessWidget {
-  final String title;
-  final String subtitle;
-
-  const _BrandingPanel({required this.title, required this.subtitle});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      height: 520,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(14),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF1F6FEB), Color(0xFF3B82F6)],
-        ),
-      ),
-      padding: const EdgeInsets.all(24),
-      child: Align(
-        alignment: Alignment.bottomLeft,
-        child: DefaultTextStyle(
-          style: const TextStyle(color: Colors.white),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.end,
-            crossAxisAlignment: CrossAxisAlignment.start,
+          constraints: const BoxConstraints(maxWidth: 1200),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Row(
-                children: const [
-                  Icon(Icons.directions_boat_filled, color: Colors.white),
-                  SizedBox(width: 8),
-                  Icon(Icons.school, color: Colors.white),
-                ],
+              // ─────────────────────────────
+              // LADO ESQUERDO (imagem + blur + glass + logo)
+              // ─────────────────────────────
+              if (isWide)
+                Expanded(
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      // imagem de fundo
+                      Container(
+                        decoration: const BoxDecoration(
+                          image: DecorationImage(
+                            image: AssetImage('assets/images/DJI_0005.jpg'),
+                            fit: BoxFit.cover,
+                          ),
+                        ),
+                      ),
+                      // overlay leve
+                      Container(
+                        color: Colors.black.withOpacity(0.20),
+                      ),
+                      // blur no fundo todo
+                      BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 4.0, sigmaY: 4.0),
+                        child: Container(color: Colors.black.withOpacity(0.01)),
+                      ),
+                      // card liquid glass central
+                      Center(
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(20),
+                          child: BackdropFilter(
+                            filter: ImageFilter.blur(sigmaX: 15.0, sigmaY: 15.0),
+                            child: Container(
+                              margin: const EdgeInsets.symmetric(horizontal: 32),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 24, vertical: 28),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(
+                                  color: Colors.white.withOpacity(0.25),
+                                  width: 1.4,
+                                ),
+                                gradient: LinearGradient(
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                  colors: [
+                                    Colors.white.withOpacity(0.20),
+                                    Colors.white.withOpacity(0.03),
+                                  ],
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.25),
+                                    blurRadius: 18,
+                                    offset: const Offset(0, 10),
+                                  ),
+                                ],
+                              ),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Text(
+                                    'TPRB\nTraining & Performance Record Book',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.w600,
+                                      letterSpacing: 0.4,
+                                      height: 1.25,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Odfjell Management',
+                                    style: TextStyle(
+                                      color: Colors.white.withOpacity(0.75),
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+              // ─────────────────────────────
+              // LADO DIREITO (form de login)
+              // ─────────────────────────────
+              Expanded(
+                child: Center(
+                  child: Container(
+                    constraints: const BoxConstraints(maxWidth: 520),
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(14),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0x14000000),
+                          blurRadius: 10,
+                          offset: Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Form(
+                      key: _formKey,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'Sign in',
+                                style: theme.textTheme.titleLarge
+                                    ?.copyWith(fontWeight: FontWeight.w800),
+                              ),
+                              // opcional: mini logo no card também
+                              SizedBox(
+                                height: 30,
+                                child: Image.asset(
+                                  'assets/images/logo.png',
+                                  fit: BoxFit.contain,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          TextFormField(
+                            controller: _emailCtrl,
+                            textInputAction: TextInputAction.next,
+                            onFieldSubmitted: (_) =>
+                                _passwordFocus.requestFocus(),
+                            keyboardType: TextInputType.emailAddress,
+                            decoration: const InputDecoration(
+                              labelText: 'Email',
+                              border: OutlineInputBorder(),
+                              prefixIcon: Icon(Icons.alternate_email),
+                            ),
+                            validator: (v) {
+                              final value = v?.trim() ?? '';
+                              if (value.isEmpty) return 'Informe seu e-mail';
+                              final rx =
+                              RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$');
+                              if (!rx.hasMatch(value)) return 'E-mail inválido';
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 14),
+                          TextFormField(
+                            controller: _passwordCtrl,
+                            focusNode: _passwordFocus,
+                            obscureText: _obscure,
+                            onFieldSubmitted: (_) => _signIn(),
+                            decoration: InputDecoration(
+                              labelText: 'Password',
+                              border: const OutlineInputBorder(),
+                              prefixIcon: const Icon(Icons.lock_outline),
+                              suffixIcon: IconButton(
+                                icon: Icon(
+                                  _obscure
+                                      ? Icons.visibility
+                                      : Icons.visibility_off,
+                                ),
+                                onPressed: () =>
+                                    setState(() => _obscure = !_obscure),
+                              ),
+                            ),
+                            validator: (v) {
+                              if ((v ?? '').isEmpty) {
+                                return 'Inform your password';
+                              }
+                              return null;
+                            },
+                          ),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton(
+                              onPressed: _sendReset,
+                              child: const Text('Forgot password?'),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          FilledButton(
+                            onPressed: _busy ? null : _signIn,
+                            child: _busy
+                                ? const SizedBox(
+                              height: 18,
+                              width: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                                : const Text('Sign in'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
               ),
-              const SizedBox(height: 12),
-              Text(title,
-                  style: theme.textTheme.headlineMedium?.copyWith(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w800,
-                  )),
-              const SizedBox(height: 6),
-              Text(subtitle,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    color: Colors.white.withOpacity(0.9),
-                  )),
-              const SizedBox(height: 18),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// ─────────────────────────────────────────────
+/// Tela para forçar o usuário a alterar a senha
+/// ─────────────────────────────────────────────
+class ChangePasswordPage extends StatefulWidget {
+  final User user;
+  final String role;
+  const ChangePasswordPage({super.key, required this.user, required this.role});
+
+  @override
+  State<ChangePasswordPage> createState() => _ChangePasswordPageState();
+}
+
+class _ChangePasswordPageState extends State<ChangePasswordPage> {
+  final _formKey = GlobalKey<FormState>();
+  final _currentCtrl = TextEditingController();
+  final _newCtrl = TextEditingController();
+  final _confirmCtrl = TextEditingController();
+  bool _busy = false;
+
+  @override
+  void dispose() {
+    _currentCtrl.dispose();
+    _newCtrl.dispose();
+    _confirmCtrl.dispose();
+    super.dispose();
+  }
+
+  void _showSnack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating),
+    );
+  }
+
+  Widget? _pageForRole(String role) {
+    switch (role.toLowerCase()) {
+      case 'trainee':
+        return const TraineeDashboardPage();
+      case 'supervisor':
+        return const OfficerReviewDashboardPage();
+      case 'admin':
+        return const AdminPage();
+      case 'office':
+        return const FleetOverviewPage();
+      default:
+        return null;
+    }
+  }
+
+  Future<void> _submit() async {
+    if (_busy) return;
+    final valid = _formKey.currentState?.validate() ?? false;
+    if (!valid) return;
+
+    if (widget.user.email == null) {
+      _showSnack('No email, it is not possible to change the password.');
+      return;
+    }
+
+    setState(() => _busy = true);
+    try {
+      final email = widget.user.email!;
+      final currentPassword = _currentCtrl.text.trim();
+      final newPassword = _newCtrl.text.trim();
+
+      final cred = EmailAuthProvider.credential(
+        email: email,
+        password: currentPassword,
+      );
+      await widget.user.reauthenticateWithCredential(cred);
+
+      await widget.user.updatePassword(newPassword);
+
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.user.uid)
+          .set(
+        {
+          'mustChangePassword': false,
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
+
+      final page = _pageForRole(widget.role);
+      if (!mounted) return;
+      if (page != null) {
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => page),
+              (_) => false,
+        );
+      } else {
+        _showSnack('It was not possible to display dashboard.');
+      }
+    } on FirebaseAuthException catch (e) {
+      String msg = 'Error when changing password.';
+      if (e.code == 'wrong-password') msg = 'Incorrect current password.';
+      if (e.code == 'weak-password') msg = 'The new password is weak.';
+      if (e.code == 'requires-recent-login') {
+        msg = 'Log in again to change the password.';
+      }
+      _showSnack(msg);
+    } catch (e) {
+      _showSnack('Unexpected error: $e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Change password')),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: Card(
+            margin: const EdgeInsets.all(16),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextFormField(
+                      controller: _currentCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Current password',
+                        border: OutlineInputBorder(),
+                      ),
+                      obscureText: true,
+                      validator: (v) {
+                        if ((v ?? '').isEmpty) return 'Inform the current password';
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: _newCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'New password',
+                        border: OutlineInputBorder(),
+                      ),
+                      obscureText: true,
+                      validator: (v) {
+                        if ((v ?? '').isEmpty) return 'Inform the new password';
+                        if ((v ?? '').length < 6) return 'Use at least 6 characters';
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: _confirmCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Confirm new password',
+                        border: OutlineInputBorder(),
+                      ),
+                      obscureText: true,
+                      validator: (v) {
+                        if ((v ?? '').isEmpty) return 'Confirm new password';
+                        if (v != _newCtrl.text) return 'The password do not match';
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 20),
+                    FilledButton(
+                      onPressed: _busy ? null : _submit,
+                      child: _busy
+                          ? const SizedBox(
+                        height: 18,
+                        width: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                          : const Text('Save new password'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
         ),
       ),

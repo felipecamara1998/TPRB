@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:ui';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -12,24 +13,27 @@ class OfficerReviewDashboardPage extends StatefulWidget {
   const OfficerReviewDashboardPage({super.key});
 
   @override
-  State<OfficerReviewDashboardPage> createState() => _OfficerReviewDashboardPageState();
+  State<OfficerReviewDashboardPage> createState() =>
+      _OfficerReviewDashboardPageState();
 }
 
-class _OfficerReviewDashboardPageState extends State<OfficerReviewDashboardPage> {
-  // --- Meta do supervisor (nome, vessel, uid)
+class _OfficerReviewDashboardPageState
+    extends State<OfficerReviewDashboardPage> {
+  // meta do supervisor
   Future<_SupervisorMeta>? _metaFut;
 
-  // --- Stream dos pendentes para a UI
+  // stream dos pendentes
   final _pendingCtrl = StreamController<List<_PendingItem>>.broadcast();
 
-  // --- Subscriptions vivas
+  // listeners vivos
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _usersSub;
-  final Map<String, StreamSubscription<QuerySnapshot<Map<String, dynamic>>>> _declSubs = {};
+  final Map<String, StreamSubscription<QuerySnapshot<Map<String, dynamic>>>>
+  _declSubs = {};
 
-  // --- Acúmulo/dedup dos itens pendentes
+  // pendentes agrupados
   final Map<String, _PendingItem> _itemsByKey = {};
 
-  // --- KPIs dinâmicos
+  // KPIs
   int _kpiPending = 0;
   int _kpiActiveTrainees = 0;
 
@@ -49,9 +53,7 @@ class _OfficerReviewDashboardPageState extends State<OfficerReviewDashboardPage>
     super.dispose();
   }
 
-  // ------------------------------
-  // BOOTSTRAP: carrega meta e liga os listeners
-  // ------------------------------
+  // -------------------------------- init --------------------------------
   void _bootstrap() {
     _metaFut = _loadMeta().then((meta) {
       _listenTraineesAndDeclarations(meta);
@@ -62,23 +64,26 @@ class _OfficerReviewDashboardPageState extends State<OfficerReviewDashboardPage>
 
   Future<_SupervisorMeta> _loadMeta() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) {
-      throw StateError('No logged user');
-    }
-    final snap = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+    if (uid == null) throw StateError('No logged user');
+
+    final snap =
+    await FirebaseFirestore.instance.collection('users').doc(uid).get();
     final data = snap.data() ?? {};
     final vessel = (data['vessel'] ?? data['vesselName'] ?? '').toString();
-    final name = (data['userName'] ?? data['name'] ?? data['displayName'] ?? '').toString();
+    final name =
+    (data['userName'] ?? data['name'] ?? data['displayName'] ?? '').toString();
+
     return _SupervisorMeta(
       supervisorId: uid,
-      supervisorName: name.isEmpty ? (FirebaseAuth.instance.currentUser?.email ?? 'Supervisor') : name,
+      supervisorName: name.isEmpty
+          ? (FirebaseAuth.instance.currentUser?.email ?? 'Supervisor')
+          : name,
       vessel: vessel,
     );
   }
 
-  // Escuta a lista de trainees do mesmo vessel, e para cada um, escuta as declarações pendentes
+  // escuta trainees do mesmo vessel e acopla listeners nas declarações
   void _listenTraineesAndDeclarations(_SupervisorMeta meta) {
-    // 1) Quem é trainee no mesmo vessel?
     _usersSub?.cancel();
     _usersSub = FirebaseFirestore.instance
         .collection('users')
@@ -90,24 +95,27 @@ class _OfficerReviewDashboardPageState extends State<OfficerReviewDashboardPage>
 
       for (final d in qs.docs) {
         final m = d.data();
-        final roleRaw = (m['role'] ?? m['userRole'] ?? '').toString().toLowerCase();
+        final roleRaw =
+        (m['role'] ?? m['userRole'] ?? '').toString().toLowerCase();
         final isTrainee = roleRaw.contains('trainee');
         if (!isTrainee) continue;
 
         activeIds.add(d.id);
         activeTrainees++;
 
+        // novo trainee, acopla
         if (!_declSubs.containsKey(d.id)) {
-          // Novo trainee: acoplar listener nas declarações pendentes
           _attachDeclarationsListener(
             traineeId: d.id,
-            traineeName: (m['userName'] ?? m['name'] ?? m['email'] ?? 'Trainee').toString(),
+            traineeName:
+            (m['userName'] ?? m['name'] ?? m['email'] ?? 'Trainee').toString(),
           );
         }
       }
 
-      // Remover listeners de trainees que saíram
-      final toRemove = _declSubs.keys.where((id) => !activeIds.contains(id)).toList();
+      // remove listeners de quem saiu
+      final toRemove =
+      _declSubs.keys.where((id) => !activeIds.contains(id)).toList();
       for (final id in toRemove) {
         _declSubs[id]?.cancel();
         _declSubs.remove(id);
@@ -134,13 +142,13 @@ class _OfficerReviewDashboardPageState extends State<OfficerReviewDashboardPage>
 
       for (final d in qs.docs) {
         final m = d.data();
-        final key = '$traineeId::${d.id}'; // chave global para dedup
+        final key = '$traineeId::${d.id}';
 
         final declaredAt = (m['declaredAt'] as Timestamp?)?.toDate();
         final chapterTitle = (m['chapterTitle'] ?? '').toString();
         final programTitle = (m['programTitle'] ?? '').toString();
         final taskTitle = (m['taskTitle'] ?? '').toString();
-        final taskId = (m['taskId'] ?? '').toString(); // ex.: "1.1" (se for esse o id)
+        final taskId = (m['taskId'] ?? '').toString();
 
         final pendingCount = (m['pendingCount'] ?? 0) is int
             ? m['pendingCount'] as int
@@ -158,9 +166,7 @@ class _OfficerReviewDashboardPageState extends State<OfficerReviewDashboardPage>
 
         _itemsByKey[key] = _PendingItem(
           key: key,
-          // referência do doc para aprovar
           ref: d.reference,
-          // dados de exibição
           traineeId: traineeId,
           traineeName: traineeName,
           submittedAt: declaredAt,
@@ -169,7 +175,6 @@ class _OfficerReviewDashboardPageState extends State<OfficerReviewDashboardPage>
           title: taskTitle,
           indexLabel: taskId.isEmpty ? '—' : taskId,
           evidence: evidence.isEmpty ? '—' : evidence,
-          // contadores
           requiredQty: requiredQty,
           approvedCount: approvedCount,
           pendingCount: pendingCount,
@@ -178,8 +183,9 @@ class _OfficerReviewDashboardPageState extends State<OfficerReviewDashboardPage>
         aliveKeys.add(key);
       }
 
-      // Remover qualquer item deste trainee que não veio no snapshot atual
-      _itemsByKey.removeWhere((k, _) => k.startsWith('$traineeId::') && !aliveKeys.contains(k));
+      // limpa o que morreu
+      _itemsByKey.removeWhere(
+              (k, _) => k.startsWith('$traineeId::') && !aliveKeys.contains(k));
 
       _emit();
     });
@@ -200,38 +206,67 @@ class _OfficerReviewDashboardPageState extends State<OfficerReviewDashboardPage>
     if (mounted) setState(() {});
   }
 
-  // ------------------------------
-  // Aprovar (Review & Sign)
-  // ------------------------------
-  Future<void> _approve(_PendingItem it) async {
+  // -------------------------------- approve --------------------------------
+  Future<void> _approve(
+      _PendingItem it, {
+        required bool isFinalApproval,
+      }) async {
     final sup = await _metaFut!;
-    final ok = await showDialog<bool>(
+
+    final remarkController = TextEditingController();
+
+    final bool? confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Review & Sign'),
-        content: Text(
-          'Approve this completion?\n\n'
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
               'Trainee: ${it.traineeName}\n'
-              'Program: ${it.program}\n'
-              'Chapter: ${it.chapter}\n'
-              'Task: ${it.title}',
+                  'Program: ${it.program}\n'
+                  'Chapter: ${it.chapter}\n'
+                  'Task: ${it.title}',
+              style: const TextStyle(height: 1.3),
+            ),
+            if (isFinalApproval) ...[
+              const SizedBox(height: 16),
+              TextField(
+                controller: remarkController,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  labelText: 'Assessing officer remark',
+                  hintText: 'Ex.: The trainee exceeded expectations when describing his/her duties.',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Approve')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Approve'),
+          ),
         ],
       ),
     );
-    if (ok != true) return;
 
+    if (confirmed != true) return;
+
+    final String remark = remarkController.text.trim();
     final ref = it.ref;
 
     try {
       await FirebaseFirestore.instance.runTransaction((tx) async {
         final snap = await tx.get(ref);
-        if (!snap.exists) {
-          throw StateError('Declaration no longer exists.');
-        }
+        if (!snap.exists) return;
+
         final m = snap.data() as Map<String, dynamic>? ?? {};
         final requiredQty = (m['requiredQty'] ?? 1) is int
             ? m['requiredQty'] as int
@@ -243,16 +278,13 @@ class _OfficerReviewDashboardPageState extends State<OfficerReviewDashboardPage>
             ? m['pendingCount'] as int
             : int.tryParse('${m['pendingCount']}') ?? 0;
 
-        if (prevPending <= 0) {
-          // nada para aprovar
-          return;
-        }
+        if (prevPending <= 0) return;
 
         final newApproved = prevApproved + 1;
         final newPending = prevPending - 1;
         final fullyApproved = (newApproved >= requiredQty) && (newPending <= 0);
 
-        tx.update(ref, {
+        final updateData = <String, dynamic>{
           'approvedCount': newApproved,
           'pendingCount': newPending < 0 ? 0 : newPending,
           'status': fullyApproved ? 'approved' : 'declared',
@@ -260,7 +292,14 @@ class _OfficerReviewDashboardPageState extends State<OfficerReviewDashboardPage>
           'lastApproverId': sup.supervisorId,
           'lastApproverName': sup.supervisorName,
           'updatedAt': FieldValue.serverTimestamp(),
-        });
+        };
+
+        // grava o remark só na última execução
+        if (isFinalApproval && remark.isNotEmpty) {
+          updateData['reviewRemark'] = remark;
+        }
+
+        tx.update(ref, updateData);
       });
 
       if (!mounted) return;
@@ -283,6 +322,7 @@ class _OfficerReviewDashboardPageState extends State<OfficerReviewDashboardPage>
     return '$dd/$mm/$yy';
   }
 
+  // -------------------------------- UI --------------------------------
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -305,11 +345,13 @@ class _OfficerReviewDashboardPageState extends State<OfficerReviewDashboardPage>
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Supervisor Review Dashboard',
-                      style: theme.textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -.2,
-                      )),
+                  Text(
+                    'Supervisor Review Dashboard',
+                    style: theme.textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -.2,
+                    ),
+                  ),
                   const SizedBox(height: 4),
                   Text(
                     meta == null
@@ -321,103 +363,62 @@ class _OfficerReviewDashboardPageState extends State<OfficerReviewDashboardPage>
                   ),
                   const SizedBox(height: 18),
 
-                  // ==== KPI CARDS ====
+                  // ===== KPI CARDS =====
                   LayoutBuilder(
                     builder: (context, constraints) {
-                      final isMobile = constraints.maxWidth < 500;
-
-                      if (isMobile) {
-                        // labels CURTAS para evitar corte: Pending / Approved / Returned / Active
-                        return Row(
-                          children: [
-                            Expanded(
-                              child: _KpiMiniCard(
-                                value: '$_kpiPending',
-                                label: 'Pending',
-                                icon: Icons.timer_outlined,
-                                iconBg: const Color(0xFFE9F0FF),
-                                iconColor: const Color(0xFF3B82F6),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            const Expanded(
-                              child: _KpiMiniCard(
-                                value: '0',
-                                label: 'Approved',
-                                icon: Icons.verified_outlined,
-                                iconBg: Color(0xFFE8F7EE),
-                                iconColor: Color(0xFF22C55E),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            const Expanded(
-                              child: _KpiMiniCard(
-                                value: '0',
-                                label: 'Returned',
-                                icon: Icons.error_outline,
-                                iconBg: Color(0xFFFFF1EC),
-                                iconColor: Color(0xFFF97316),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: _KpiMiniCard(
-                                value: '$_kpiActiveTrainees',
-                                label: 'Active',
-                                icon: Icons.person_outline,
-                                iconBg: const Color(0xFFF2ECFF),
-                                iconColor: const Color(0xFF8B5CF6),
-                              ),
-                            ),
-                          ],
-                        );
-                      }
-
-                      // --- DESKTOP/TABLET: mantém sua grade original de cards grandes ---
                       final cols = constraints.maxWidth >= 980
                           ? 4
                           : constraints.maxWidth >= 700
                           ? 2
                           : 1;
-
                       const spacing = 16.0;
                       final totalSpacing = spacing * (cols - 1);
-                      final cellWidth = (constraints.maxWidth - totalSpacing) / cols;
+                      final cellWidth =
+                          (constraints.maxWidth - totalSpacing) / cols;
 
-                      Widget item(Widget child) => SizedBox(width: cellWidth, child: child);
+                      Widget item(Widget child) =>
+                          SizedBox(width: cellWidth, child: child);
 
                       return Wrap(
                         spacing: spacing,
                         runSpacing: spacing,
                         children: [
-                          item(_KpiCard(
-                            value: '$_kpiPending',
-                            label: 'Pending Review',
-                            icon: Icons.timer_outlined,
-                            iconBg: const Color(0xFFE9F0FF),
-                            iconColor: const Color(0xFF3B82F6),
-                          )),
-                          item(const _KpiCard(
-                            value: '0',
-                            label: 'Approved This Week',
-                            icon: Icons.verified_outlined,
-                            iconBg: Color(0xFFE8F7EE),
-                            iconColor: Color(0xFF22C55E),
-                          )),
-                          item(const _KpiCard(
-                            value: '0',
-                            label: 'Returned',
-                            icon: Icons.error_outline,
-                            iconBg: Color(0xFFFFF1EC),
-                            iconColor: Color(0xFFF97316),
-                          )),
-                          item(_KpiCard(
-                            value: '$_kpiActiveTrainees',
-                            label: 'Active Trainees',
-                            icon: Icons.person_outline,
-                            iconBg: const Color(0xFFF2ECFF),
-                            iconColor: const Color(0xFF8B5CF6),
-                          )),
+                          item(
+                            _KpiCard(
+                              value: '$_kpiPending',
+                              label: 'Pending Review',
+                              icon: Icons.timer_outlined,
+                              iconBg: const Color(0xFFE9F0FF),
+                              iconColor: const Color(0xFF3B82F6),
+                            ),
+                          ),
+                          item(
+                            const _KpiCard(
+                              value: '0',
+                              label: 'Approved This Week',
+                              icon: Icons.verified_outlined,
+                              iconBg: Color(0xFFE8F7EE),
+                              iconColor: Color(0xFF22C55E),
+                            ),
+                          ),
+                          item(
+                            const _KpiCard(
+                              value: '0',
+                              label: 'Returned',
+                              icon: Icons.error_outline,
+                              iconBg: Color(0xFFFFF1EC),
+                              iconColor: Color(0xFFF97316),
+                            ),
+                          ),
+                          item(
+                            _KpiCard(
+                              value: '$_kpiActiveTrainees',
+                              label: 'Active Trainees',
+                              icon: Icons.person_outline,
+                              iconBg: const Color(0xFFF2ECFF),
+                              iconColor: const Color(0xFF8B5CF6),
+                            ),
+                          ),
                         ],
                       );
                     },
@@ -425,14 +426,15 @@ class _OfficerReviewDashboardPageState extends State<OfficerReviewDashboardPage>
 
                   const SizedBox(height: 18),
 
-                  // ========= Pending Reviews =========
+                  // ===== PENDING LIST =====
                   _SectionSurface(
                     padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(children: [
-                          Icon(Icons.auto_awesome, size: 18, color: Colors.black.withOpacity(.72)),
+                          Icon(Icons.auto_awesome,
+                              size: 18, color: Colors.black.withOpacity(.72)),
                           const SizedBox(width: 8),
                           Text('Pending Reviews',
                               style: theme.textTheme.titleMedium?.copyWith(
@@ -447,7 +449,6 @@ class _OfficerReviewDashboardPageState extends State<OfficerReviewDashboardPage>
                           ),
                         ),
                         const SizedBox(height: 14),
-
                         StreamBuilder<List<_PendingItem>>(
                           stream: _pendingCtrl.stream,
                           builder: (context, snap) {
@@ -461,7 +462,8 @@ class _OfficerReviewDashboardPageState extends State<OfficerReviewDashboardPage>
                                 ),
                                 child: Text(
                                   'No submissions pending review.',
-                                  style: TextStyle(color: Colors.black.withOpacity(.62)),
+                                  style: TextStyle(
+                                      color: Colors.black.withOpacity(.62)),
                                 ),
                               );
                             }
@@ -471,10 +473,20 @@ class _OfficerReviewDashboardPageState extends State<OfficerReviewDashboardPage>
                                 for (int i = 0; i < items.length; i++) ...[
                                   _PendingItemCard(
                                     item: items[i],
-                                    submittedAtStr: _fmtDate(items[i].submittedAt),
-                                    onReviewAndSign: () => _approve(items[i]),
+                                    submittedAtStr:
+                                    _fmtDate(items[i].submittedAt),
+                                    onReviewAndSign: () {
+                                      // última execução = remark
+                                      final isFinal = (items[i].pendingCount == 1) &&
+                                          (items[i].approvedCount +
+                                              items[i].pendingCount ==
+                                              items[i].requiredQty);
+                                      _approve(items[i],
+                                          isFinalApproval: isFinal);
+                                    },
                                   ),
-                                  if (i < items.length - 1) const SizedBox(height: 12),
+                                  if (i < items.length - 1)
+                                    const SizedBox(height: 12),
                                 ]
                               ],
                             );
@@ -493,8 +505,7 @@ class _OfficerReviewDashboardPageState extends State<OfficerReviewDashboardPage>
   }
 }
 
-// ─────────────────────────── META ───────────────────────────
-
+// ─────────────────────────── MODELOS ───────────────────────────
 class _SupervisorMeta {
   final String supervisorId;
   final String supervisorName;
@@ -505,8 +516,6 @@ class _SupervisorMeta {
     required this.vessel,
   });
 }
-
-// ─────────────────────────── MODELO PENDENTE ───────────────────────────
 
 class _PendingItem {
   final String key; // traineeId::docId
@@ -540,8 +549,7 @@ class _PendingItem {
   });
 }
 
-// ─────────────────────────── UI COMPONENTES ───────────────────────────
-
+// ─────────────────────────── UI ───────────────────────────
 class _KpiCard extends StatelessWidget {
   final String value;
   final String label;
@@ -549,114 +557,55 @@ class _KpiCard extends StatelessWidget {
   final Color iconBg;
   final Color iconColor;
 
-  /// NOVO: quando `compact == true`, renderiza um quadradinho (ícone + número)
-  final bool compact;
-
-  /// NOVO: tamanho do lado no modo compacto (default 76)
-  final double size;
-
   const _KpiCard({
     required this.value,
     required this.label,
     required this.icon,
     required this.iconBg,
     required this.iconColor,
-    this.compact = false,
-    this.size = 76,
   });
 
   @override
   Widget build(BuildContext context) {
-    if (compact) {
-      // ---- MODO COMPACTO (ícone + contador) ----
-      return Tooltip(
-        message: label,
-        child: Container(
-          width: size,
-          height: size,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: const Color(0xFFE6EBF2)),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x11000000),
-                blurRadius: 8,
-                offset: Offset(0, 2),
-              ),
-            ],
+    final valueStyle = Theme.of(context)
+        .textTheme
+        .headlineSmall
+        ?.copyWith(fontWeight: FontWeight.w800, letterSpacing: -.2);
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x11000000),
+            blurRadius: 12,
+            offset: Offset(0, 6),
           ),
-          padding: const EdgeInsets.all(10),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(value, style: valueStyle),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
+              Text(label, style: const TextStyle(fontWeight: FontWeight.w700)),
               Container(
-                height: 28,
-                width: 28,
+                height: 36,
+                width: 36,
                 decoration: BoxDecoration(
                   color: iconBg,
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                child: Icon(icon, color: iconColor, size: 18),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                value,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -.2,
-                ),
+                child: Icon(icon, color: iconColor, size: 20),
               ),
             ],
           ),
-        ),
-      );
-    }
-
-    // ---- MODO PADRÃO (o seu cartão grande) ----
-    final valueStyle = Theme.of(context).textTheme.headlineSmall?.copyWith(
-      fontWeight: FontWeight.w800,
-      letterSpacing: -.2,
-    );
-
-    return _Card(
-      padding: const EdgeInsets.all(16),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 120),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(value, style: valueStyle),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                OutlinedButton(
-                  onPressed: () {},
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    side: const BorderSide(color: Color(0xFFE6EBF2)),
-                    foregroundColor: const Color(0xFF374151),
-                    shape: const StadiumBorder(),
-                  ),
-                  child: Text(label, style: const TextStyle(fontWeight: FontWeight.w700)),
-                ),
-                Container(
-                  height: 36,
-                  width: 36,
-                  decoration: BoxDecoration(
-                    color: iconBg,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(icon, color: iconColor, size: 20),
-                ),
-              ],
-            ),
-          ],
-        ),
+        ],
       ),
     );
   }
@@ -688,126 +637,6 @@ class _SectionSurface extends StatelessWidget {
   }
 }
 
-class _KpiMiniCard extends StatelessWidget {
-  final String value;
-  final String label; // aparece 1 linha (curta) + tooltip completo
-  final IconData icon;
-  final Color iconBg;
-  final Color iconColor;
-
-  const _KpiMiniCard({
-    required this.value,
-    required this.label,
-    required this.icon,
-    required this.iconBg,
-    required this.iconColor,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: label,
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: const Color(0xFFE6EBF2)),
-          boxShadow: const [
-            BoxShadow(color: Color(0x11000000), blurRadius: 8, offset: Offset(0, 2)),
-          ],
-        ),
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              height: 28,
-              width: 28,
-              decoration: BoxDecoration(
-                color: iconBg,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(icon, color: iconColor, size: 18),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              value,
-              maxLines: 1,
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: 4),
-            // legenda curta, 1 linha, sem quebrar layout
-            Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 11, color: Colors.black54),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _Card extends StatelessWidget {
-  final Widget child;
-  final EdgeInsetsGeometry? padding;
-  final Color? color;
-  final BoxBorder? border;
-  final double? height;
-
-  const _Card({
-    required this.child,
-    this.padding,
-    this.color,
-    this.border,
-    this.height,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: height,
-      padding: padding ?? const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: color ?? Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: border,
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x11000000),
-            blurRadius: 12,
-            offset: Offset(0, 6),
-          ),
-        ],
-      ),
-      child: child,
-    );
-  }
-}
-
-class _PillButton extends StatelessWidget {
-  final String label;
-  final VoidCallback onPressed;
-  const _PillButton({required this.label, required this.onPressed});
-
-  @override
-  Widget build(BuildContext context) {
-    return TextButton(
-      onPressed: onPressed,
-      style: TextButton.styleFrom(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        backgroundColor: const Color(0xFFEFF2FF),
-        foregroundColor: const Color(0xFF374151),
-        shape: const StadiumBorder(),
-      ),
-      child: Text(label, style: const TextStyle(fontWeight: FontWeight.w700)),
-    );
-  }
-}
-
 class _PendingItemCard extends StatelessWidget {
   final _PendingItem item;
   final String submittedAtStr;
@@ -822,9 +651,13 @@ class _PendingItemCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final muted = Colors.black.withOpacity(.62);
 
-    return _Card(
+    return Container(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-      color: const Color(0xFFF7F9FB),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF7F9FB),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE6EAF0)),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -849,9 +682,19 @@ class _PendingItemCard extends StatelessWidget {
                   ],
                 ),
               ),
-              _PillButton(
-                label: 'Review & Sign',
+              TextButton(
                 onPressed: onReviewAndSign,
+                style: TextButton.styleFrom(
+                  backgroundColor: const Color(0xFFEFF2FF),
+                  foregroundColor: const Color(0xFF374151),
+                  shape: const StadiumBorder(),
+                  padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                ),
+                child: const Text(
+                  'Review & Sign',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
               ),
             ],
           ),
@@ -874,16 +717,18 @@ class _PendingItemCard extends StatelessWidget {
           const SizedBox(height: 10),
           Text('Evidence Provided:',
               style: TextStyle(
-                  fontWeight: FontWeight.w800,
-                  color: Colors.black.withOpacity(.82))),
+                  fontWeight: FontWeight.w800, color: Colors.black.withOpacity(.82))),
           const SizedBox(height: 6),
-          _Card(
-            color: Colors.white,
-            border: Border.all(color: const Color(0xFFE6EAF0)),
+          Container(
             padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFE6EAF0)),
+            ),
             child: Text(
               item.evidence,
-              style: TextStyle(color: Colors.black.withOpacity(.8), height: 1.3),
+              style: TextStyle(color: muted, height: 1.3),
             ),
           ),
         ],
@@ -932,9 +777,13 @@ class _SubmittedChip extends StatelessWidget {
         children: [
           Icon(Icons.circle, size: 8, color: Color(0xFF2563EB)),
           SizedBox(width: 6),
-          Text('Submitted',
-              style: TextStyle(
-                  color: Color(0xFF2563EB), fontWeight: FontWeight.w700)),
+          Text(
+            'Submitted',
+            style: TextStyle(
+              color: Color(0xFF2563EB),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
         ],
       ),
     );
@@ -952,10 +801,18 @@ class _Meta extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text('$label: ',
-            style:
-            TextStyle(fontWeight: FontWeight.w700, color: muted, height: 1)),
-        Text(value, style: TextStyle(color: muted)),
+        Text(
+          '$label: ',
+          style: TextStyle(
+            fontWeight: FontWeight.w700,
+            color: muted,
+            height: 1,
+          ),
+        ),
+        Text(
+          value,
+          style: TextStyle(color: muted),
+        ),
       ],
     );
   }

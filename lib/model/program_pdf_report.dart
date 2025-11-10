@@ -28,8 +28,7 @@ Future<Uint8List> buildProgramReportPdf({
   // 1) total de tasks
   final totalTasks = _countTotalTasks(chapters);
 
-  // 2) tasks concluídas usando a mesma regra da página:
-  // status == "approved" OU approvedCount >= requiredQty
+  // 2) tasks concluídas
   final completedTasks = _countCompletedTasks(
     chapters: chapters,
     statusByTaskId: statusByTaskId,
@@ -65,7 +64,7 @@ Future<Uint8List> buildProgramReportPdf({
           ),
           pw.SizedBox(height: 16),
 
-          // overview com progresso calculado aqui mesmo
+          // overview com progresso
           pw.Container(
             decoration: pw.BoxDecoration(
               color: PdfColors.grey200,
@@ -79,9 +78,7 @@ Future<Uint8List> buildProgramReportPdf({
                 _overviewBox(title: 'Tasks', value: totalTasks.toString()),
                 _overviewBox(
                   title: 'Completion',
-                  // value: '$completedTasks / $totalTasks (${completionPercent}%)',
-                  value:
-                  '${completionPercent}%',
+                  value: '${completionPercent}%',
                 ),
               ],
             ),
@@ -173,10 +170,8 @@ int _countCompletedTasks({
 
 /// mesma regra da página
 bool _isTaskDone(_PdfTaskStatus st) {
-  // 1. status direto
   if ((st.status ?? '').toLowerCase() == 'approved') return true;
 
-  // 2. contagem
   final rq = st.requiredQty ?? 1;
   final ac = st.approvedCount ?? 0;
   if (ac >= rq) return true;
@@ -221,7 +216,8 @@ pw.Widget _tasksTable({
   required Map<String, dynamic> statusByTaskId,
   required DateFormat dateFmt,
 }) {
-  final headers = ['Task', 'Declared at', 'Approved at'];
+  // adicionamos a coluna de remark
+  final headers = ['Task', 'Declared at', 'Approved at', 'Assessing officer remark'];
 
   final rows = tasks.map((task) {
     final taskId = _s(task['id']);
@@ -234,6 +230,7 @@ pw.Widget _tasksTable({
       title,
       _fmtDate(st.declaredAt, dateFmt),
       _fmtDate(st.approvedAt, dateFmt),
+      st.reviewRemark ?? '-', // nova coluna
     ];
   }).toList();
 
@@ -247,10 +244,12 @@ pw.Widget _tasksTable({
     ),
     cellStyle: const pw.TextStyle(fontSize: 9),
     cellAlignment: pw.Alignment.centerLeft,
+    // deixamos a última coluna maior
     columnWidths: {
-      0: const pw.FlexColumnWidth(4),
-      1: const pw.FlexColumnWidth(2),
-      2: const pw.FlexColumnWidth(2),
+      0: const pw.FlexColumnWidth(3),
+      1: const pw.FlexColumnWidth(1.4),
+      2: const pw.FlexColumnWidth(1.4),
+      3: const pw.FlexColumnWidth(3.5),
     },
     border: pw.TableBorder.all(color: PdfColors.grey300, width: 0.3),
   );
@@ -289,6 +288,8 @@ class _PdfTaskStatus {
   final String? status;
   final int? approvedCount;
   final int? requiredQty;
+  // NOVO
+  final String? reviewRemark;
 
   const _PdfTaskStatus({
     this.declaredAt,
@@ -296,13 +297,14 @@ class _PdfTaskStatus {
     this.status,
     this.approvedCount,
     this.requiredQty,
+    this.reviewRemark,
   });
 }
 
 _PdfTaskStatus _coerceStatus(dynamic raw) {
   if (raw == null) return const _PdfTaskStatus();
 
-  // caso mais comum: o botão já mandou Map
+  // caso mais comum: veio como Map
   if (raw is Map) {
     return _PdfTaskStatus(
       declaredAt: _asDateTime(raw['declaredAt']),
@@ -310,14 +312,18 @@ _PdfTaskStatus _coerceStatus(dynamic raw) {
       status: raw['status']?.toString(),
       approvedCount: _asInt(raw['approvedCount']),
       requiredQty: _asInt(raw['requiredQty']),
+      reviewRemark: (raw['reviewRemark'] ?? '').toString().trim().isEmpty
+          ? null
+          : (raw['reviewRemark'] as String),
     );
   }
 
-  // fallback: objeto TaskStatus
+  // fallback: objeto TaskStatus vindo direto do app
   try {
-    // ignore: avoid_dynamic_calls
     return _PdfTaskStatus(
+      // ignore: avoid_dynamic_calls
       declaredAt: _asDateTime(raw.declaredAt),
+      // ignore: avoid_dynamic_calls
       approvedAt: _asDateTime(raw.approvedAt),
       // ignore: avoid_dynamic_calls
       status: raw.status?.toString(),
@@ -325,6 +331,10 @@ _PdfTaskStatus _coerceStatus(dynamic raw) {
       approvedCount: _asInt(raw.approvedCount),
       // ignore: avoid_dynamic_calls
       requiredQty: _asInt(raw.requiredQty),
+      // ignore: avoid_dynamic_calls
+      reviewRemark: (raw.reviewRemark ?? '').toString().trim().isEmpty
+          ? null
+          : raw.reviewRemark as String,
     );
   } catch (_) {
     return const _PdfTaskStatus();

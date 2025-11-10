@@ -3,7 +3,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-import 'package:tprb/firebase_options.dart'; // ajuste "tprb" se o name do seu pacote for diferente
+import 'package:tprb/firebase_options.dart';
 
 class _Vessel {
   final String id;
@@ -11,13 +11,11 @@ class _Vessel {
   const _Vessel(this.id, this.name);
 }
 
-// estado
 Future<List<_Vessel>>? _vesselsFuture;
 String? _selectedVesselId;
 String? _selectedVesselName;
 
-
-/// Reuso de um app secundário para criar usuários sem afetar a sessão atual (evita 'channel-error').
+/// App secundário para criar usuários sem derrubar a sessão atual
 class _SecondaryAuth {
   static FirebaseApp? _app;
   static FirebaseAuth? _auth;
@@ -37,6 +35,28 @@ class _SecondaryAuth {
   }
 }
 
+// roles do sistema (permissão dentro do app)
+const _systemRoles = ['admin', 'supervisor', 'office', 'trainee'];
+
+// roles (para padronizar o campo userRole do teu Firestore)
+const _Roles = [
+  'Master',
+  'Chief Officer',
+  'Second Officer',
+  'Third Officer',
+  'Chief Engineer',
+  'Second Engineer',
+  'Third Engineer',
+  'ETO',
+  'Bosun',
+  'AB',
+  'Oiler',
+  'Cadet (Deck)',
+  'Cadet (Engine)',
+  'Superintendent',
+  'HR',
+];
+
 class NewUserPage extends StatefulWidget {
   const NewUserPage({super.key});
 
@@ -47,130 +67,112 @@ class NewUserPage extends StatefulWidget {
 class _NewUserPageState extends State<NewUserPage> {
   final _formKey = GlobalKey<FormState>();
   final _emailCtrl = TextEditingController();
-  String _selectedRole = _roles.first;
-  bool _busy = false;
-  String? _vessel;
-  final _nameCtrl = TextEditingController();   // userName
-  String? _userRole;                           // userRole
+  final _nameCtrl = TextEditingController();
 
-// (opcional) opções de cargo para o dropdown
-  final List<String> _possibleRoles = const [
-    'Deck Cadet',
-    'Third Officer',
-    'SecondOfficer',
-    'Chief Officer',
-    'Captain',
-    'Engine Cadet',
-    'Third Engineer',
-    'Second Engineer',
-    'Chief Engineer',
-    'Bosun',
-    'A/B',
-    'O/S',
-    'Motorman',
-    'Fitter',
-    'Oiler',
-    'Pumpman',
-    'Electrician',
-    'Nurse',
-    'Messman',
-    'Cook',
-    'Marine Superintendent',
-    'Technical Superintendent',
-  ];
+  String _selectedSystemRole = _systemRoles.first;
+  String _selectedRole = _Roles.first;
+
+  bool _busy = false;
 
   @override
   void initState() {
     super.initState();
-    _vesselsFuture = _fetchVessels();
+    _vesselsFuture = _loadVessels();
   }
 
-  Future<List<_Vessel>> _fetchVessels() async {
-    final qs = await FirebaseFirestore.instance
+  Future<List<_Vessel>> _loadVessels() async {
+    final snap = await FirebaseFirestore.instance
         .collection('vessels')
-        .orderBy('name') // cada doc tem { name: "Bow Aquarius" }
+        .orderBy('name')
         .get();
 
-    return qs.docs.map((d) {
-      final m = d.data();
-      final name = (m['name'] ?? d.id).toString();
-      return _Vessel(d.id, name);
-    }).toList();
+    return snap.docs
+        .map((d) => _Vessel(d.id, (d.data()['name'] ?? 'Unnamed') as String))
+        .toList();
   }
-
-  static const List<String> _roles = ['Trainee', 'Supervisor', 'Office', 'Admin'];
 
   @override
   void dispose() {
     _emailCtrl.dispose();
+    _nameCtrl.dispose();
     super.dispose();
   }
 
-  String initialsFromName(String name) {
-    final parts = name.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
-    if (parts.isEmpty) return '';
-    final first = parts.first[0];
-    final second = parts.length > 1 ? parts.last[0] : '';
-    return (first + second).toUpperCase();
+  String _makeInitials(String name, String email) {
+    final n = name.trim();
+    if (n.isEmpty) {
+      final user = email.split('@').first;
+      if (user.length >= 2) return user.substring(0, 2).toUpperCase();
+      return user.toUpperCase();
+    }
+    final parts = n.split(' ');
+    if (parts.length == 1) return parts.first.substring(0, 1).toUpperCase();
+    return (parts[0].substring(0, 1) + parts[1].substring(0, 1)).toUpperCase();
   }
-
 
   Future<void> _createUser() async {
     final valid = _formKey.currentState?.validate() ?? false;
     if (!valid) return;
 
     setState(() => _busy = true);
-
     try {
-      // 1) Cria no Auth via app secundário
-      final auth = await _SecondaryAuth.instance();
       final email = _emailCtrl.text.trim();
       const defaultPassword = 'password';
 
+      // 1) cria no Auth (app secundário)
+      final auth = await _SecondaryAuth.instance();
       final cred = await auth.createUserWithEmailAndPassword(
         email: email,
         password: defaultPassword,
       );
       final uid = cred.user!.uid;
 
-      // 2) (Opcional) displayName simples
-      await cred.user!.updateDisplayName(email.split('@').first);
+      final fallbackName = email.split('@').first;
+      await cred.user!.updateDisplayName(fallbackName);
 
-      // 3) Persiste o role no Firestore (app principal)
-      await FirebaseFirestore.instance.collection('users').doc(uid).set(
-        {
-          'email': email,
-          'role': _selectedRole,
-          'status': 'active',
-          'createdAt': FieldValue.serverTimestamp(),
-          'updatedAt': FieldValue.serverTimestamp(),
-        },
-        SetOptions(merge: true),
-      );
+      // 2) monta o documento no formato que o resto do app usa
+      final userName = _nameCtrl.text.trim().isEmpty
+          ? fallbackName
+          : _nameCtrl.text.trim();
 
-      // 4) Mantém a sua sessão (apenas sai do secundário)
+      final initials = _makeInitials(userName, email);
+
+      final data = <String, dynamic>{
+        'email': email,
+        'role': _selectedSystemRole,       // role do app (admin/supervisor/...)
+        'status': 'active',
+        'vessel': _selectedVesselName ?? '',
+        'userName': userName,
+        'userRole': _selectedRole,  // <- padronizado pelo dropdown
+        'initials': initials,
+        'programs': <String, dynamic>{},
+        'mustChangePassword': true,        // <- força troca no primeiro login
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+
+      // 3) salva no Firestore principal
+      await FirebaseFirestore.instance.collection('users').doc(uid).set(data);
+
+      // 4) sai do app secundário
       await auth.signOut();
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Usuário criado: $email (role: $_selectedRole)')),
+        const SnackBar(content: Text('Usuário criado com sucesso')),
       );
       Navigator.of(context).pop();
     } on FirebaseAuthException catch (e) {
-      final messages = <String, String>{
+      final msgs = <String, String>{
         'email-already-in-use': 'Este e-mail já está em uso.',
         'invalid-email': 'E-mail inválido.',
-        'operation-not-allowed': 'Email/Password desativado no projeto.',
-        'weak-password': 'Senha padrão não atende a política atual.',
-        'channel-error':
-        'Falha no canal nativo. Tente novamente (evite criar/deletar apps durante a operação).',
-        'network-request-failed': 'Sem conexão com a internet.',
+        'weak-password': 'A senha padrão não atende à política.',
+        'operation-not-allowed': 'Email/senha desativado no projeto.',
+        'network-request-failed': 'Sem conexão.',
       };
-      final msg = messages[e.code] ?? 'Falha ao criar usuário';
+      final msg = msgs[e.code] ?? 'Falha ao criar usuário.';
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$msg (code: ${e.code})')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -187,154 +189,171 @@ class _NewUserPageState extends State<NewUserPage> {
 
     return Scaffold(
       backgroundColor: const Color(0xFFF6F8FB),
-      appBar: AppBar(
-        title: const Text('Add User'),
-        backgroundColor: Colors.white,
-        elevation: 0.5,
-      ),
+      appBar: AppBar(title: const Text('Create user')),
       body: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 600),
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: const [
-                  BoxShadow(color: Color(0x14000000), blurRadius: 10, offset: Offset(0, 4)),
-                ],
-              ),
-              padding: const EdgeInsets.all(16),
-              child: Form(
-                key: _formKey,
-                child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                  Text('Create a new account',
-                      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
-                  const SizedBox(height: 16),
-
-                  // Email
-                  TextFormField(
-                    controller: _emailCtrl,
-                    keyboardType: TextInputType.emailAddress,
-                    decoration: const InputDecoration(
-                      labelText: 'Email',
-                      hintText: 'user@company.com',
-                      border: OutlineInputBorder(),
+          constraints: const BoxConstraints(maxWidth: 520),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: SingleChildScrollView(
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x14000000),
+                      blurRadius: 10,
+                      offset: Offset(0, 4),
                     ),
-                    validator: (v) {
-                      final value = v?.trim() ?? '';
-                      if (value.isEmpty) return 'Informe um e-mail';
-                      final rx = RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$');
-                      if (!rx.hasMatch(value)) return 'E-mail inválido';
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: 12),
-
-                  // User Type
-                  InputDecorator(
-                    decoration: const InputDecoration(labelText: 'User type', border: OutlineInputBorder()),
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<String>(
-                        value: _selectedRole,
-                        isExpanded: true,
-                        items: _roles.map((r) => DropdownMenuItem(value: r, child: Text(r))).toList(),
-                        onChanged: (v) => setState(() => _selectedRole = v ?? _selectedRole),
+                  ],
+                ),
+                padding: const EdgeInsets.all(16),
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        'Create a new account',
+                        style: theme.textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w700),
                       ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
+                      const SizedBox(height: 16),
 
-                  // Nome
-                  TextFormField(
-                    controller: _nameCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Name',
-                      hintText: 'Ex.: Felipe Camara',
-                    ),
-                    validator: (v) => (v == null || v.trim().isEmpty) ? 'Enter a name' : null,
-                  ),
+                      // Email
+                      TextFormField(
+                        controller: _emailCtrl,
+                        keyboardType: TextInputType.emailAddress,
+                        decoration: const InputDecoration(
+                          labelText: 'Email',
+                          hintText: 'user@company.com',
+                          border: OutlineInputBorder(),
+                        ),
+                        validator: (v) {
+                          final value = v?.trim() ?? '';
+                          if (value.isEmpty) return 'Informe um e-mail';
+                          final rx =
+                          RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$');
+                          if (!rx.hasMatch(value)) {
+                            return 'E-mail inválido';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 12),
 
-                  const SizedBox(height: 12),
+                      // Nome do usuário
+                      TextFormField(
+                        controller: _nameCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'User name',
+                          hintText: 'ex.: Marcelo Degobi',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
 
-                  FutureBuilder<List<_Vessel>>(
-                    future: _vesselsFuture,
-                    builder: (context, snap) {
-                      if (snap.connectionState == ConnectionState.waiting) {
-                        return const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 8),
-                          child: LinearProgressIndicator(),
-                        );
-                      }
-                      final vessels = snap.data ?? const <_Vessel>[];
-                      if (vessels.isEmpty) {
-                        return const Text('No vessels found');
-                      }
-                      return DropdownButtonFormField<String>(
-                        value: _selectedVesselId,
-                        items: vessels
-                            .map((v) => DropdownMenuItem(
-                          value: v.id,
-                          child: Text(v.name),
-                        ))
+                      // User role (onboard) – agora dropdown
+                      DropdownButtonFormField<String>(
+                        value: _selectedRole,
+                        decoration: const InputDecoration(
+                          labelText: 'User role',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: _Roles
+                            .map(
+                              (r) => DropdownMenuItem(
+                            value: r,
+                            child: Text(r),
+                          ),
+                        )
                             .toList(),
                         onChanged: (val) {
-                          setState(() {
-                            _selectedVesselId = val;
-                            _selectedVesselName =
-                                vessels.firstWhere((v) => v.id == val).name;
-                          });
+                          if (val == null) return;
+                          setState(() => _selectedRole = val);
                         },
+                      ),
+                      const SizedBox(height: 12),
+
+                      // System role
+                      DropdownButtonFormField<String>(
+                        value: _selectedSystemRole,
                         decoration: const InputDecoration(
-                          labelText: 'Vessel',
+                          labelText: 'System role',
+                          border: OutlineInputBorder(),
                         ),
-                        validator: (v) => v == null ? 'Select a vessel' : null,
-                      );
-                    },
+                        items: _systemRoles
+                            .map(
+                              (r) => DropdownMenuItem(
+                            value: r,
+                            child: Text(r),
+                          ),
+                        )
+                            .toList(),
+                        onChanged: (val) {
+                          if (val == null) return;
+                          setState(() => _selectedSystemRole = val);
+                        },
+                      ),
+                      const SizedBox(height: 12),
+
+                      // Vessel
+                      FutureBuilder<List<_Vessel>>(
+                        future: _vesselsFuture,
+                        builder: (context, snap) {
+                          if (snap.connectionState ==
+                              ConnectionState.waiting) {
+                            return const LinearProgressIndicator();
+                          }
+                          final vessels =
+                              snap.data ?? const <_Vessel>[];
+                          if (vessels.isEmpty) {
+                            return const Text('No vessels found');
+                          }
+                          return DropdownButtonFormField<String>(
+                            value: _selectedVesselId,
+                            decoration: const InputDecoration(
+                              labelText: 'Vessel',
+                              border: OutlineInputBorder(),
+                            ),
+                            items: vessels
+                                .map(
+                                  (v) => DropdownMenuItem(
+                                value: v.id,
+                                child: Text(v.name),
+                              ),
+                            )
+                                .toList(),
+                            onChanged: (val) {
+                              setState(() {
+                                _selectedVesselId = val;
+                                _selectedVesselName = vessels
+                                    .firstWhere((e) => e.id == val)
+                                    .name;
+                              });
+                            },
+                          );
+                        },
+                      ),
+
+                      const SizedBox(height: 20),
+                      FilledButton(
+                        onPressed: _busy ? null : _createUser,
+                        child: _busy
+                            ? const SizedBox(
+                          height: 18,
+                          width: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                            : const Text('Create'),
+                      ),
+                    ],
                   ),
-
-                  const SizedBox(height: 12),
-
-                  // Role
-                  DropdownButtonFormField<String>(
-                    value: _userRole,
-                    items: _possibleRoles.map((r) => DropdownMenuItem(value: r, child: Text(r))).toList(),
-                    onChanged: (v) => setState(() => _userRole = v),
-                    decoration: const InputDecoration(labelText: 'Role'),
-                    validator: (v) => v == null ? 'Select a role' : null,
-                  ),
-
-                  const SizedBox(height: 12),
-
-                  // Info senha
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFFF3E7),
-                      border: Border.all(color: const Color(0xFFFFE1C2)),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Text(
-                      'A senha padrão será "password". O usuário deverá alterar a senha no primeiro acesso.',
-                      style: TextStyle(color: Color(0xFF8A5A00)),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Botão
-                  FilledButton.icon(
-                    onPressed: _busy ? null : _createUser,
-                    icon: _busy
-                        ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                        : const Icon(Icons.person_add_alt_1),
-                    label: Text(_busy ? 'Adding...' : 'Add User'),
-                    style: FilledButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                  ),
-                ]),
+                ),
               ),
             ),
           ),

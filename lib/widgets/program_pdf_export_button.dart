@@ -22,7 +22,8 @@ class ProgramPdfExportButton extends StatefulWidget {
   });
 
   @override
-  State<ProgramPdfExportButton> createState() => _ProgramPdfExportButtonState();
+  State<ProgramPdfExportButton> createState() =>
+      _ProgramPdfExportButtonState();
 }
 
 class _ProgramPdfExportButtonState extends State<ProgramPdfExportButton> {
@@ -38,7 +39,7 @@ class _ProgramPdfExportButtonState extends State<ProgramPdfExportButton> {
         child: CircularProgressIndicator(strokeWidth: 2),
       )
           : const Icon(Icons.picture_as_pdf),
-      label: const Text('Exportar PDF'),
+      label: const Text('Export PDF'),
       onPressed: _busy ? null : () => _onExport(context),
     );
   }
@@ -99,12 +100,11 @@ class _ProgramPdfExportButtonState extends State<ProgramPdfExportButton> {
             .get();
         final m = snap.data();
         if (m != null) {
-          candidate =
-              (m['userName'] as String?) ??
-                  (m['name'] as String?) ??
-                  (m['fullName'] as String?) ??
-                  (m['displayName'] as String?) ??
-                  candidate;
+          candidate = (m['userName'] as String?) ??
+              (m['name'] as String?) ??
+              (m['fullName'] as String?) ??
+              (m['displayName'] as String?) ??
+              candidate;
         }
       }
     } catch (_) {}
@@ -113,7 +113,7 @@ class _ProgramPdfExportButtonState extends State<ProgramPdfExportButton> {
   }
 
   /// Busca no Firestore as declarações daquele programa e monta
-  /// um mapa por taskId com declaredAt/approvedAt/lastApproverName.
+  /// um mapa por taskId com declaredAt/approvedAt/lastApproverName/remark.
   ///
   /// Se não achar no Firestore, usa o que veio em [fallback].
   Future<Map<String, dynamic>> _fetchFullStatusMapFromFirestore({
@@ -122,7 +122,6 @@ class _ProgramPdfExportButtonState extends State<ProgramPdfExportButton> {
   }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
-      // sem usuário, devolve o que já tinha
       return _normalizeStatusMap(fallback);
     }
 
@@ -144,8 +143,6 @@ class _ProgramPdfExportButtonState extends State<ProgramPdfExportButton> {
     for (final doc in snap.docs) {
       final d = doc.data();
 
-      // pelo teu print, o taskId parece estar salvo no documento.
-      // se não estiver, tenta doc.id (mas aí só funciona se você salvou com o id certo)
       final taskId =
       (d['taskId'] ?? d['task_id'] ?? d['task'] ?? doc.id).toString();
 
@@ -155,13 +152,25 @@ class _ProgramPdfExportButtonState extends State<ProgramPdfExportButton> {
         'lastApproverName': d['lastApproverName'],
         'approvedCount': d['approvedCount'],
         'pendingCount': d['pendingCount'],
+        // 👇 pega o mesmo nome que está no Firestore
+        'reviewRemark': d['reviewRemark'],
       };
     }
 
-    // agora mistura com o que já tinha (pra pegar approvedCount etc. que vieram do stream)
+    // mistura com o fallback
     final normalizedFallback = _normalizeStatusMap(fallback);
     normalizedFallback.forEach((taskId, value) {
-      result.putIfAbsent(taskId, () => value);
+      if (!result.containsKey(taskId)) {
+        result[taskId] = value;
+      } else {
+        // se o Firestore não tinha remark mas o fallback tinha, aproveita
+        final existing = result[taskId] as Map<String, dynamic>;
+        final fb = value as Map<String, dynamic>;
+        if ((existing['reviewRemark'] == null || existing['reviewRemark'] == '') &&
+            (fb['reviewRemark'] != null && fb['reviewRemark'] != '')) {
+          existing['reviewRemark'] = fb['reviewRemark'];
+        }
+      }
     });
 
     return result;
@@ -200,6 +209,7 @@ class _ProgramPdfExportButtonState extends State<ProgramPdfExportButton> {
   }
 
   /// Converte Map<String, TaskStatus> -> Map<String, Map<String, dynamic>>
+  /// e agora leva junto o reviewRemark.
   Map<String, dynamic> _normalizeStatusMap(Map<String, dynamic> original) {
     final result = <String, dynamic>{};
 
@@ -210,11 +220,15 @@ class _ProgramPdfExportButtonState extends State<ProgramPdfExportButton> {
       }
 
       if (value is Map<String, dynamic>) {
-        result[taskId] = value;
+        // garante que a chave exista mesmo assim
+        result[taskId] = {
+          ...value,
+          if (!value.containsKey('reviewRemark')) 'reviewRemark': value['reviewRemark'],
+        };
         return;
       }
 
-      // tentar tratar como TaskStatus
+      // tentar tratar como TaskStatus (o que você usa na ProgramTasksPage)
       try {
         final map = <String, dynamic>{};
         // ignore: avoid_dynamic_calls
@@ -235,6 +249,9 @@ class _ProgramPdfExportButtonState extends State<ProgramPdfExportButton> {
                 value.approvedBy ??
                 value.declaredBy ??
                 value.lastBy;
+        // 👇 este é o campo novo vindo do objeto
+        // ignore: avoid_dynamic_calls
+        map['reviewRemark'] = value.reviewRemark;
         result[taskId] = map;
       } catch (_) {
         result[taskId] = {

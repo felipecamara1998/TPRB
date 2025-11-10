@@ -129,8 +129,8 @@ class TraineeActiveCampaignsBox extends StatelessWidget {
         .where('userId', isEqualTo: uid);
 
     return _Shell(
-      title: 'My Campaigns',
-      subtitle: onlyActiveCampaigns ? 'Active campaigns assigned to you' : 'All your campaigns',
+      title: 'My Programs',
+      subtitle: onlyActiveCampaigns ? 'Active programs assigned to you' : 'All your programs',
       child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: assignmentsQuery.snapshots(),
         builder: (context, snap) {
@@ -146,7 +146,7 @@ class TraineeActiveCampaignsBox extends StatelessWidget {
               .toList();
 
           if (assignments.isEmpty) {
-            return const _EmptyState(message: 'No campaigns assigned to you yet.');
+            return const _EmptyState(message: 'No programs assigned to you yet.');
           }
 
           // Pega todos os campaignIds desses assignments
@@ -158,7 +158,7 @@ class TraineeActiveCampaignsBox extends StatelessWidget {
 
           // Se tiver até 10, usa whereIn; caso contrário, cai no modo per-item (evita limite do Firestore)
           if (ids.isEmpty) {
-            return const _EmptyState(message: 'No campaigns found for your assignments.');
+            return const _EmptyState(message: 'No programs found for your assignments.');
           } else if (ids.length <= 10) {
             final campaignsQuery = FirebaseFirestore.instance
                 .collection('campaigns')
@@ -192,7 +192,7 @@ class TraineeActiveCampaignsBox extends StatelessWidget {
                 }
 
                 if (rows.isEmpty) {
-                  return const _EmptyState(message: 'No active campaigns for you.');
+                  return const _EmptyState(message: 'No active programs for you.');
                 }
 
                 return _CampaignList(rows: rows);
