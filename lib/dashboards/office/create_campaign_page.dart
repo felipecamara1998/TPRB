@@ -218,7 +218,7 @@ class _CreateCampaignPageState extends State<CreateCampaignPage> {
                       icon: _submitting
                           ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
                           : const Icon(Icons.campaign_outlined),
-                      label: Text(_submitting ? 'Creating...' : 'Create campaign'),
+                      label: Text(_submitting ? 'Creating...' : 'Create program'),
                     ),
                   ],
                 ),
@@ -231,7 +231,7 @@ class _CreateCampaignPageState extends State<CreateCampaignPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Create Campaign'),
+        title: const Text('Create Program'),
       ),
       body: body,
     );
@@ -245,7 +245,7 @@ class _CreateCampaignPageState extends State<CreateCampaignPage> {
         context: context,
         builder: (_) => AlertDialog(
           title: const Text('Preview'),
-          content: Text('This campaign will assign the program to ${uids.length} user(s).'),
+          content: Text('This program will be assigned to ${uids.length} user(s).'),
           actions: [
             TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK')),
           ],
@@ -348,7 +348,7 @@ class _CreateCampaignPageState extends State<CreateCampaignPage> {
       await batch.commit();
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Campaign created')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Program created')));
       Navigator.pop(context);
     } catch (e) {
       setState(() { _submitting = false; _error = 'Error: $e'; });

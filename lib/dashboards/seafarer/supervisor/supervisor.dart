@@ -37,6 +37,9 @@ class _OfficerReviewDashboardPageState
   int _kpiPending = 0;
   int _kpiActiveTrainees = 0;
 
+  // >>> NOVO: role canônico do supervisor para filtrar as declarações
+  String? _supRoleCanon;
+
   @override
   void initState() {
     super.initState();
@@ -66,12 +69,12 @@ class _OfficerReviewDashboardPageState
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) throw StateError('No logged user');
 
-    final snap =
-    await FirebaseFirestore.instance.collection('users').doc(uid).get();
+    final snap = await FirebaseFirestore.instance.collection('users').doc(uid).get();
     final data = snap.data() ?? {};
+
     final vessel = (data['vessel'] ?? data['vesselName'] ?? '').toString();
-    final name =
-    (data['userName'] ?? data['name'] ?? data['displayName'] ?? '').toString();
+    final name = (data['userName'] ?? data['name'] ?? data['displayName'] ?? '').toString();
+    final supervisorRole = (data['userRole'] ?? data['role'] ?? '').toString();
 
     return _SupervisorMeta(
       supervisorId: uid,
@@ -79,6 +82,7 @@ class _OfficerReviewDashboardPageState
           ? (FirebaseAuth.instance.currentUser?.email ?? 'Supervisor')
           : name,
       vessel: vessel,
+      supervisorRole: supervisorRole, // <- importante para o filtro
     );
   }
 
@@ -95,27 +99,24 @@ class _OfficerReviewDashboardPageState
 
       for (final d in qs.docs) {
         final m = d.data();
-        final roleRaw =
-        (m['role'] ?? m['userRole'] ?? '').toString().toLowerCase();
-        final isTrainee = roleRaw.contains('trainee');
-        if (!isTrainee) continue;
+        // Considera qualquer tripulante do navio; se quiser, limite a quem tem userRole preenchido
+        final hasUserRole = ((m['userRole'] ?? '').toString()).isNotEmpty;
+        if (!hasUserRole) continue;
 
         activeIds.add(d.id);
         activeTrainees++;
 
-        // novo trainee, acopla
         if (!_declSubs.containsKey(d.id)) {
           _attachDeclarationsListener(
             traineeId: d.id,
-            traineeName:
-            (m['userName'] ?? m['name'] ?? m['email'] ?? 'Trainee').toString(),
+            traineeName: (m['userName'] ?? m['name'] ?? m['email'] ?? 'Trainee').toString(),
+            supervisorRole: meta.supervisorRole, // <- passa o cargo do supervisor
           );
         }
       }
 
       // remove listeners de quem saiu
-      final toRemove =
-      _declSubs.keys.where((id) => !activeIds.contains(id)).toList();
+      final toRemove = _declSubs.keys.where((id) => !activeIds.contains(id)).toList();
       for (final id in toRemove) {
         _declSubs[id]?.cancel();
         _declSubs.remove(id);
@@ -130,20 +131,27 @@ class _OfficerReviewDashboardPageState
   void _attachDeclarationsListener({
     required String traineeId,
     required String traineeName,
+    required String supervisorRole, // ex.: "Second Officer"
   }) {
     final sub = FirebaseFirestore.instance
         .collection('users')
         .doc(traineeId)
         .collection('task_declarations')
-        .where('pendingCount', isGreaterThan: 0)
+        .where('pendingCount', isGreaterThan: 0) // mantém a query simples (sem índice composto)
         .snapshots()
         .listen((qs) {
       final aliveKeys = <String>{};
 
       for (final d in qs.docs) {
         final m = d.data();
-        final key = '$traineeId::${d.id}';
 
+        // ⚠️ Filtro no cliente: só entra se for destinado ao cargo do supervisor
+        final declaredTo = (m['declaredToRole'] ?? '').toString();
+        if (declaredTo.isNotEmpty && supervisorRole.isNotEmpty && declaredTo != supervisorRole) {
+          continue;
+        }
+
+        final key = '$traineeId::${d.id}';
         final declaredAt = (m['declaredAt'] as Timestamp?)?.toDate();
         final chapterTitle = (m['chapterTitle'] ?? '').toString();
         final programTitle = (m['programTitle'] ?? '').toString();
@@ -183,10 +191,7 @@ class _OfficerReviewDashboardPageState
         aliveKeys.add(key);
       }
 
-      // limpa o que morreu
-      _itemsByKey.removeWhere(
-              (k, _) => k.startsWith('$traineeId::') && !aliveKeys.contains(k));
-
+      _itemsByKey.removeWhere((k, _) => k.startsWith('$traineeId::') && !aliveKeys.contains(k));
       _emit();
     });
 
@@ -237,7 +242,8 @@ class _OfficerReviewDashboardPageState
                 maxLines: 3,
                 decoration: const InputDecoration(
                   labelText: 'Assessing officer remark',
-                  hintText: 'Ex.: The trainee exceeded expectations when describing his/her duties.',
+                  hintText:
+                  'Ex.: The trainee exceeded expectations when describing his/her duties.',
                   border: OutlineInputBorder(),
                 ),
               ),
@@ -510,10 +516,13 @@ class _SupervisorMeta {
   final String supervisorId;
   final String supervisorName;
   final String vessel;
+  final String supervisorRole; // ex.: "Second Officer"
+
   _SupervisorMeta({
     required this.supervisorId,
     required this.supervisorName,
     required this.vessel,
+    required this.supervisorRole,
   });
 }
 
@@ -746,7 +755,7 @@ class _IndexChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: const Color(0xFFF1F5F9),
+        color: const Color(0xFFF1F59),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
@@ -816,4 +825,37 @@ class _Meta extends StatelessWidget {
       ],
     );
   }
+}
+
+/// ===== Helper de normalização de cargos (canônico) =====
+String? _canonicalOfficerRole(String? raw) {
+  if (raw == null) return null;
+  final s = raw.trim().toLowerCase();
+
+  if (s == 'master' || s == 'captain' || s.contains('captain') || s == 'comandante') {
+    return 'Master';
+  }
+  if (s == 'chief officer' || s == 'chief office' || s == 'chief mate' || s == 'c/o' || s == 'imediato') {
+    return 'Chief Officer';
+  }
+  if (s == 'second officer' || s == '2/o' || s == 'second mate' || s == 'segundo oficial' || s == '2o' || s == '2º oficial') {
+    return 'Second Officer';
+  }
+  if (s == 'third officer' || s == '3/o' || s == 'terceiro oficial' || s == '3o' || s == '3º oficial') {
+    return 'Third Officer';
+  }
+  if (s == 'chief engineer' || s == 'c/e' || s == 'chefe de máquinas' || s == 'chefe de maquinas') {
+    return 'Chief Engineer';
+  }
+  if (s == 'second engineer' || s == '2/e' || s == 'segundo engenheiro' || s == '2º engenheiro') {
+    return 'Second Engineer';
+  }
+  if (s == 'third engineer' || s == '3/e' || s == 'terceiro engenheiro' || s == '3º engenheiro') {
+    return 'Third Engineer';
+  }
+  if (s == 'eto' || s.contains('electro') || s.contains('eletricista')) {
+    return 'ETO';
+  }
+
+  return raw.trim().isEmpty ? null : raw.trim();
 }

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:tprb/dashboards/admin/chapter_tasks_page.dart';
+import 'package:tprb/dashboards/office/admin/chapter_tasks_page.dart';
 
 /// Firestore collection root
 const _kProgramsCol = 'training_programs';

@@ -271,23 +271,55 @@ class _ProgramTasksPageState extends State<ProgramTasksPage> {
     required TaskModel task,
     String? campaignId,
   }) async {
-    final ok = await showDialog<bool>(
+    // pega o role do trainee e opções de superiores
+    final traineeRole = await _fetchUserRole(userId);
+    final superiorOptions = _superiorOfficerRolesFor(traineeRole);
+
+// diálogo com dropdown; retorna a ROLE selecionada
+    final selectedRole = await showDialog<String?>(
       context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Confirm declaration'),
-        content: Text(
-          'Do you want to declare this task as completed?\n\n'
-              'Program: $programTitle\n'
-              'Chapter: $chapterTitle\n'
-              'Task: ${task.title}',
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Declare')),
-        ],
-      ),
+      builder: (_) {
+        String? _selected;
+        return StatefulBuilder(
+          builder: (context, setState) => AlertDialog(
+            title: const Text('Confirm declaration'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Do you want to declare this task as completed?\n\n'
+                      'Program: $programTitle\n'
+                      'Chapter: $chapterTitle\n'
+                      'Task: ${task.title}',
+                ),
+                const SizedBox(height: 16),
+                const Text('Select approving officer', style: TextStyle(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<String>(
+                  value: _selected,
+                  items: superiorOptions.map((r) => DropdownMenuItem(value: r, child: Text(r))).toList(),
+                  onChanged: (v) => setState(() => _selected = v),
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context, null), child: const Text('Cancel')),
+              FilledButton(
+                onPressed: _selected == null ? null : () => Navigator.pop(context, _selected),
+                child: const Text('Declare'),
+              ),
+            ],
+          ),
+        );
+      },
     );
-    if (ok != true) return;
+    if (selectedRole == null) return;
     if (isReadOnly) return;
 
     final safeTask = task.id.replaceAll('.', '·');
@@ -337,20 +369,22 @@ class _ProgramTasksPageState extends State<ProgramTasksPage> {
         }
 
         tx.update(declRef, {
-          'pendingCount'  : FieldValue.increment(1),
-          'declaredAt'    : FieldValue.serverTimestamp(),
-          'status'        : 'declared',
-          'updatedAt'     : FieldValue.serverTimestamp(),
+          'pendingCount'   : FieldValue.increment(1),
+          'declaredAt'     : FieldValue.serverTimestamp(),
+          'status'         : 'declared',
+          'declaredToRole' : selectedRole,
+          'updatedAt'      : FieldValue.serverTimestamp(),
         });
 
         final compRef = declRef.collection('completions').doc();
         tx.set(compRef, {
-          'status'     : 'declared',
-          'declaredAt' : FieldValue.serverTimestamp(),
-          'programId'  : programId,
-          'chapterId'  : chapterId,
-          'taskId'     : task.id,
-          'userId'     : userId,
+          'status'         : 'declared',
+          'declaredAt'     : FieldValue.serverTimestamp(),
+          'programId'      : programId,
+          'chapterId'      : chapterId,
+          'taskId'         : task.id,
+          'userId'         : userId,
+          'declaredToRole' : selectedRole,
         });
       });
 
@@ -718,6 +752,68 @@ class _ProgramTasksPageState extends State<ProgramTasksPage> {
       ),
     );
   }
+}
+
+// ─────────── Hierarquia de oficiais (roles apenas) ───────────
+const List<String> _deckOfficials = [
+  'Master', 'Chief Officer', 'Second Officer', 'Third Officer',
+];
+const List<String> _engineOfficials = [
+  'Master', 'Chief Engineer', 'Second Engineer', 'Third Engineer', 'ETO',
+];
+
+// listas completas para inferir departamento (inclui ratings)
+const List<String> _deckAll = [
+  'Master','Chief Officer','Second Officer','Third Officer',
+  'Bosun','AB','OS','Cadet (Deck)',
+];
+const List<String> _engineAll = [
+  'Master','Chief Engineer','Second Engineer','Third Engineer','ETO',
+  'Oiler','Pumpman','Fitter','Motorman','Cadet (Engine)',
+];
+
+String _inferDeptFromRole(String? role) {
+  if (role == null) return 'Deck';
+  if (_deckAll.contains(role)) return 'Deck';
+  if (_engineAll.contains(role)) return 'Engine';
+  final r = role.toLowerCase();
+  if (r.contains('officer') || r.contains('bosun') || r.contains('cadet (deck)')) return 'Deck';
+  if (r.contains('engine') || r.contains('eto') || r.contains('oiler') || r.contains('pumpman') || r.contains('motorman')) return 'Engine';
+  return 'Deck';
+}
+
+// retorna apenas os oficiais ACIMA do trainee no mesmo departamento
+List<String> _superiorOfficerRolesFor(String? traineeRole) {
+  final dept = _inferDeptFromRole(traineeRole);
+  final offs = dept == 'Engine' ? _engineOfficials : _deckOfficials;
+
+  int levelOf(String r) {
+    if (dept == 'Deck') return _deckOfficials.indexOf(r);
+    // Engine: Third Engineer e ETO compartilham o mesmo nível
+    if (r == 'Third Engineer' || r == 'ETO') return 3;
+    return _engineOfficials.indexOf(r);
+  }
+
+  int traineeLevel;
+  if (dept == 'Deck') {
+    traineeLevel = _deckOfficials.contains(traineeRole)
+        ? levelOf(traineeRole!)
+        : levelOf('Third Officer') + 1; // ratings veem todos os oficiais
+  } else {
+    traineeLevel = _engineOfficials.contains(traineeRole)
+        ? levelOf(traineeRole!)
+        : 4; // ratings veem todos os oficiais (abaixo do nível 3 compartilhado)
+  }
+
+  return offs.where((r) => levelOf(r) >= 0 && levelOf(r) < traineeLevel).toList();
+}
+
+// pega o cargo do usuário no Firestore
+Future<String?> _fetchUserRole(String uid) async {
+  final snap = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+  final d = snap.data() ?? {};
+  final role = (d['userRole'] ?? '').toString().trim();
+  return role.isEmpty ? null : role;
 }
 
 // ────────────────────── Visual helpers ──────────────────────

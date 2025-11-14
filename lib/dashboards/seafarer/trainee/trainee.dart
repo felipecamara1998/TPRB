@@ -511,8 +511,10 @@ class OverallDonutProgress extends StatelessWidget {
         }
 
         final root = usnap.data!.data() ?? {};
-        final programsMap =
-        (root['programs'] ?? {}) as Map<String, dynamic>;
+        final Map<String, dynamic> programsMap =
+        Map<String, dynamic>.from(
+          root['programs'] ?? <String, dynamic>{},
+        );
         _log('programs (keys) = ${programsMap.keys.toList()}');
 
         if (programsMap.isEmpty) {

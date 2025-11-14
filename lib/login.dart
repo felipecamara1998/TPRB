@@ -4,10 +4,12 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 // importe suas páginas reais
-import 'package:tprb/dashboards/trainee/trainee.dart';
-import 'package:tprb/dashboards/supervisor/supervisor.dart';
-import 'package:tprb/dashboards/admin/admin.dart';
+import 'package:tprb/dashboards/seafarer/trainee/trainee.dart';
+import 'package:tprb/dashboards/seafarer/supervisor/supervisor.dart';
+import 'package:tprb/dashboards/office/admin/admin.dart';
 import 'package:tprb/dashboards/office/office.dart';
+import 'package:tprb/dashboards/seafarer/seafarer.dart';
+import 'package:tprb/dashboards/office/office_page.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -64,8 +66,10 @@ class _LoginPageState extends State<LoginPage> {
 
   Future<void> _routeUser(User user) async {
     try {
-      final doc =
-      await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
       final data = doc.data() ?? {};
       final role = (data['role'] as String?)?.trim() ?? '';
       final mustChange = data['mustChangePassword'] as bool? ?? false;
@@ -104,14 +108,12 @@ class _LoginPageState extends State<LoginPage> {
 
   Widget? _pageForRole(String role) {
     switch (role.toLowerCase()) {
-      case 'trainee':
-        return const TraineeDashboardPage();
-      case 'supervisor':
-        return const OfficerReviewDashboardPage();
+      case 'seafarer':
+        return const SeafarerHomePage();
       case 'admin':
         return const AdminPage();
       case 'office':
-        return const FleetOverviewPage();
+        return const OfficePage();
       default:
         return null;
     }
@@ -157,15 +159,12 @@ class _LoginPageState extends State<LoginPage> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // ─────────────────────────────
               // LADO ESQUERDO (imagem + blur + glass + logo)
-              // ─────────────────────────────
               if (isWide)
                 Expanded(
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
-                      // imagem de fundo
                       Container(
                         decoration: const BoxDecoration(
                           image: DecorationImage(
@@ -174,23 +173,23 @@ class _LoginPageState extends State<LoginPage> {
                           ),
                         ),
                       ),
-                      // overlay leve
                       Container(
                         color: Colors.black.withOpacity(0.20),
                       ),
-                      // blur no fundo todo
                       BackdropFilter(
                         filter: ImageFilter.blur(sigmaX: 4.0, sigmaY: 4.0),
-                        child: Container(color: Colors.black.withOpacity(0.01)),
+                        child:
+                        Container(color: Colors.black.withOpacity(0.01)),
                       ),
-                      // card liquid glass central
                       Center(
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(20),
                           child: BackdropFilter(
-                            filter: ImageFilter.blur(sigmaX: 15.0, sigmaY: 15.0),
+                            filter:
+                            ImageFilter.blur(sigmaX: 15.0, sigmaY: 15.0),
                             child: Container(
-                              margin: const EdgeInsets.symmetric(horizontal: 32),
+                              margin:
+                              const EdgeInsets.symmetric(horizontal: 32),
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 24, vertical: 28),
                               decoration: BoxDecoration(
@@ -233,7 +232,8 @@ class _LoginPageState extends State<LoginPage> {
                                   Text(
                                     'Odfjell Management',
                                     style: TextStyle(
-                                      color: Colors.white.withOpacity(0.75),
+                                      color:
+                                      Colors.white.withOpacity(0.75),
                                       fontSize: 13,
                                     ),
                                   ),
@@ -247,9 +247,7 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                 ),
 
-              // ─────────────────────────────
               // LADO DIREITO (form de login)
-              // ─────────────────────────────
               Expanded(
                 child: Center(
                   child: Container(
@@ -273,14 +271,15 @@ class _LoginPageState extends State<LoginPage> {
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            mainAxisAlignment:
+                            MainAxisAlignment.spaceBetween,
                             children: [
                               Text(
                                 'Sign in',
                                 style: theme.textTheme.titleLarge
-                                    ?.copyWith(fontWeight: FontWeight.w800),
+                                    ?.copyWith(
+                                    fontWeight: FontWeight.w800),
                               ),
-                              // opcional: mini logo no card também
                               SizedBox(
                                 height: 30,
                                 child: Image.asset(
@@ -305,9 +304,11 @@ class _LoginPageState extends State<LoginPage> {
                             validator: (v) {
                               final value = v?.trim() ?? '';
                               if (value.isEmpty) return 'Informe seu e-mail';
-                              final rx =
-                              RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$');
-                              if (!rx.hasMatch(value)) return 'E-mail inválido';
+                              final rx = RegExp(
+                                  r'^[^\s@]+@[^\s@]+\.[^\s@]+$');
+                              if (!rx.hasMatch(value)) {
+                                return 'E-mail inválido';
+                              }
                               return null;
                             },
                           ),
@@ -320,15 +321,16 @@ class _LoginPageState extends State<LoginPage> {
                             decoration: InputDecoration(
                               labelText: 'Password',
                               border: const OutlineInputBorder(),
-                              prefixIcon: const Icon(Icons.lock_outline),
+                              prefixIcon:
+                              const Icon(Icons.lock_outline),
                               suffixIcon: IconButton(
                                 icon: Icon(
                                   _obscure
                                       ? Icons.visibility
                                       : Icons.visibility_off,
                                 ),
-                                onPressed: () =>
-                                    setState(() => _obscure = !_obscure),
+                                onPressed: () => setState(
+                                        () => _obscure = !_obscure),
                               ),
                             ),
                             validator: (v) {
@@ -379,10 +381,15 @@ class _LoginPageState extends State<LoginPage> {
 class ChangePasswordPage extends StatefulWidget {
   final User user;
   final String role;
-  const ChangePasswordPage({super.key, required this.user, required this.role});
+  const ChangePasswordPage({
+    super.key,
+    required this.user,
+    required this.role,
+  });
 
   @override
-  State<ChangePasswordPage> createState() => _ChangePasswordPageState();
+  State<ChangePasswordPage> createState() =>
+      _ChangePasswordPageState();
 }
 
 class _ChangePasswordPageState extends State<ChangePasswordPage> {
@@ -407,16 +414,15 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
     );
   }
 
+  /// IMPORTANTE: agora usa os mesmos roles que o LoginPage
   Widget? _pageForRole(String role) {
     switch (role.toLowerCase()) {
-      case 'trainee':
-        return const TraineeDashboardPage();
-      case 'supervisor':
-        return const OfficerReviewDashboardPage();
+      case 'seafarer':
+        return const SeafarerHomePage();
       case 'admin':
         return const AdminPage();
       case 'office':
-        return const FleetOverviewPage();
+        return const OfficePage();
       default:
         return null;
     }
@@ -428,7 +434,8 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
     if (!valid) return;
 
     if (widget.user.email == null) {
-      _showSnack('No email, it is not possible to change the password.');
+      _showSnack(
+          'No email, it is not possible to change the password.');
       return;
     }
 
@@ -438,24 +445,24 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
       final currentPassword = _currentCtrl.text.trim();
       final newPassword = _newCtrl.text.trim();
 
+      // reautenticar
       final cred = EmailAuthProvider.credential(
         email: email,
         password: currentPassword,
       );
       await widget.user.reauthenticateWithCredential(cred);
 
+      // atualizar senha
       await widget.user.updatePassword(newPassword);
 
+      // deletar campo mustChangePassword e atualizar updatedAt
       await FirebaseFirestore.instance
           .collection('users')
           .doc(widget.user.uid)
-          .set(
-        {
-          'mustChangePassword': false,
-          'updatedAt': FieldValue.serverTimestamp(),
-        },
-        SetOptions(merge: true),
-      );
+          .update({
+        'mustChangePassword': FieldValue.delete(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
 
       final page = _pageForRole(widget.role);
       if (!mounted) return;
@@ -469,8 +476,12 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
       }
     } on FirebaseAuthException catch (e) {
       String msg = 'Error when changing password.';
-      if (e.code == 'wrong-password') msg = 'Incorrect current password.';
-      if (e.code == 'weak-password') msg = 'The new password is weak.';
+      if (e.code == 'wrong-password') {
+        msg = 'Incorrect current password.';
+      }
+      if (e.code == 'weak-password') {
+        msg = 'The new password is weak.';
+      }
       if (e.code == 'requires-recent-login') {
         msg = 'Log in again to change the password.';
       }
@@ -506,7 +517,9 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
                       ),
                       obscureText: true,
                       validator: (v) {
-                        if ((v ?? '').isEmpty) return 'Inform the current password';
+                        if ((v ?? '').isEmpty) {
+                          return 'Inform the current password';
+                        }
                         return null;
                       },
                     ),
@@ -519,8 +532,12 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
                       ),
                       obscureText: true,
                       validator: (v) {
-                        if ((v ?? '').isEmpty) return 'Inform the new password';
-                        if ((v ?? '').length < 6) return 'Use at least 6 characters';
+                        if ((v ?? '').isEmpty) {
+                          return 'Inform the new password';
+                        }
+                        if ((v ?? '').length < 6) {
+                          return 'Use at least 6 characters';
+                        }
                         return null;
                       },
                     ),
@@ -533,8 +550,12 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
                       ),
                       obscureText: true,
                       validator: (v) {
-                        if ((v ?? '').isEmpty) return 'Confirm new password';
-                        if (v != _newCtrl.text) return 'The password do not match';
+                        if ((v ?? '').isEmpty) {
+                          return 'Confirm new password';
+                        }
+                        if (v != _newCtrl.text) {
+                          return 'The password do not match';
+                        }
                         return null;
                       },
                     ),
