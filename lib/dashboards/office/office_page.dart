@@ -124,42 +124,35 @@ class _FleetOverviewTabState extends State<_FleetOverviewTab> {
         LayoutBuilder(
           builder: (context, constraints) {
             final isNarrow = constraints.maxWidth < 900;
+
+            // Cards SEM Expanded
             final cards = [
-              Expanded(
-                child: LiveCountCard(
-                  title: 'Active Programs',
-                  icon: Icons.check_circle_outline,
-                  query: campaigns.where('status', isEqualTo: 'active'),
-                ),
+              LiveCountCard(
+                title: 'Active Programs',
+                icon: Icons.check_circle_outline,
+                query: campaigns.where('status', isEqualTo: 'active'),
               ),
-              Expanded(
-                child: LiveCountCard(
-                  title: 'Users Enrolled',
-                  icon: Icons.groups_outlined,
-                  query: FirebaseFirestore.instance.collection('assignments'),
-                ),
+              LiveCountCard(
+                title: 'Users Enrolled',
+                icon: Icons.groups_outlined,
+                query: FirebaseFirestore.instance.collection('assignments'),
               ),
-              Expanded(
-                child: AvgCompletionCard(
-                  title: 'Avg Completion',
-                  icon: Icons.trending_up_outlined,
-                  assignmentsQuery: FirebaseFirestore.instance.collection(
-                    'assignments',
-                  ),
-                ),
+              AvgCompletionCard(
+                title: 'Avg Completion',
+                icon: Icons.trending_up_outlined,
+                assignmentsQuery:
+                FirebaseFirestore.instance.collection('assignments'),
               ),
-              Expanded(
-                child: TotalTasksCard(
-                  title: 'Total Tasks',
-                  icon: Icons.menu_book_outlined,
-                  programsQuery: FirebaseFirestore.instance.collection(
-                    'training_programs',
-                  ),
-                ),
+              TotalTasksCard(
+                title: 'Total Tasks',
+                icon: Icons.menu_book_outlined,
+                programsQuery:
+                FirebaseFirestore.instance.collection('training_programs'),
               ),
             ];
+
             if (isNarrow) {
-              // empilha em 2 linhas se espaço pequeno
+              // empilha em 2 linhas se o espaço for pequeno
               return Wrap(
                 spacing: 16,
                 runSpacing: 16,
@@ -168,13 +161,13 @@ class _FleetOverviewTabState extends State<_FleetOverviewTab> {
                     .toList(),
               );
             } else {
-              // uma linha dividindo espaço
+              // tela larga: uma linha com Expanded
               return Row(
                 children: [
-                  ...cards
-                      .expand((c) => [c, const SizedBox(width: 16)])
-                      .toList()
-                    ..removeLast(),
+                  for (var i = 0; i < cards.length; i++) ...[
+                    Expanded(child: cards[i]),
+                    if (i != cards.length - 1) const SizedBox(width: 16),
+                  ],
                 ],
               );
             }

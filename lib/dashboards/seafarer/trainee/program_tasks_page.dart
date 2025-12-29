@@ -28,7 +28,14 @@ class TaskModel {
   final String id;
   final String title;
   final int qty;
-  const TaskModel({required this.id, required this.title, required this.qty});
+  final String taskToBePerformed;
+
+  const TaskModel({
+    required this.id,
+    required this.title,
+    required this.qty,
+    this.taskToBePerformed = '',
+  });
 }
 
 class TaskStatus {
@@ -41,6 +48,8 @@ class TaskStatus {
   final String? lastApproverName;
   // remark salvo pelo supervisor no doc da declaração
   final String? reviewRemark;
+  // rating salvo pelo supervisor no doc da declaração
+  final String? performanceRating;
 
   const TaskStatus({
     required this.status,
@@ -51,6 +60,7 @@ class TaskStatus {
     this.declaredAt,
     this.lastApproverName,
     this.reviewRemark,
+    this.performanceRating,
   });
 
   bool get isDone => approvedCount >= requiredQty;
@@ -101,6 +111,8 @@ class ProgramTasksPage extends StatefulWidget {
 class _ProgramTasksPageState extends State<ProgramTasksPage> {
   final _search = TextEditingController();
   int _tab = 0;
+  final Set<String> _expandedTaskKeys = <String>{};
+
 
   late final Stream<ProgramModel> _program$;
   late final Stream<Map<String, TaskStatus>> _status$;
@@ -126,7 +138,8 @@ class _ProgramTasksPageState extends State<ProgramTasksPage> {
   }
 
   Future<void> _loadUserName() async {
-    final snap = await FirebaseFirestore.instance.collection('users').doc(widget.userId).get();
+    final snap =
+    await FirebaseFirestore.instance.collection('users').doc(widget.userId).get();
     final d = snap.data() ?? {};
     setState(() {
       _userName = (d['userName'] ?? d['name'] ?? d['displayName'] ?? '').toString();
@@ -152,8 +165,17 @@ class _ProgramTasksPageState extends State<ProgramTasksPage> {
           final tm = (te.value ?? {}) as Map? ?? {};
           final tTitle = (tm['task'] ?? '').toString();
           final qty = (tm['qty'] is num) ? (tm['qty'] as num).toInt() : 1;
+          final ttb = (tm['taskToBePerformed'] ?? '').toString();
+
           if (tTitle.isEmpty) continue;
-          tasks.add(TaskModel(id: tid, title: tTitle, qty: qty < 1 ? 1 : qty));
+          tasks.add(
+            TaskModel(
+              id: tid,
+              title: tTitle,
+              qty: qty < 1 ? 1 : qty,
+              taskToBePerformed: ttb,
+            ),
+          );
         }
         tasks.sort((a, b) => a.id.compareTo(b.id));
         chaps.add(ChapterModel(id: chId, title: 'Chapter $chId', tasks: tasks));
@@ -167,11 +189,7 @@ class _ProgramTasksPageState extends State<ProgramTasksPage> {
   // ─────────── Firestore: user.programs.<programId> OU campo achatado ───────────
 
   Stream<UserProgramMeta> _watchUserProgramMeta(String uid, String programId) {
-    return FirebaseFirestore.instance
-        .collection('users')
-        .doc(uid)
-        .snapshots()
-        .map((ds) {
+    return FirebaseFirestore.instance.collection('users').doc(uid).snapshots().map((ds) {
       final d = ds.data();
       if (d == null) return const UserProgramMeta();
 
@@ -234,8 +252,10 @@ class _ProgramTasksPageState extends State<ProgramTasksPage> {
         final req = (m['requiredQty'] is num) ? (m['requiredQty'] as num).toInt() : 1;
         final appr = (m['approvedCount'] is num) ? (m['approvedCount'] as num).toInt() : 0;
         final pend = (m['pendingCount'] is num) ? (m['pendingCount'] as num).toInt() : 0;
-        final approvedAt = (m['approvedAt'] is Timestamp) ? (m['approvedAt'] as Timestamp).toDate() : null;
-        final declaredAt = (m['declaredAt'] is Timestamp) ? (m['declaredAt'] as Timestamp).toDate() : null;
+        final approvedAt =
+        (m['approvedAt'] is Timestamp) ? (m['approvedAt'] as Timestamp).toDate() : null;
+        final declaredAt =
+        (m['declaredAt'] is Timestamp) ? (m['declaredAt'] as Timestamp).toDate() : null;
         final status = (m['status'] ?? '').toString();
         final approver = (m['lastApproverName'] ?? '').toString().trim().isEmpty
             ? null
@@ -244,6 +264,10 @@ class _ProgramTasksPageState extends State<ProgramTasksPage> {
         // pegar o remark (se o supervisor salvou)
         final remarkRaw = (m['reviewRemark'] ?? '').toString().trim();
         final remark = remarkRaw.isEmpty ? null : remarkRaw;
+
+        // pegar o rating (se o supervisor salvou)
+        final ratingRaw = (m['performanceRating'] ?? '').toString().trim();
+        final rating = ratingRaw.isEmpty ? null : ratingRaw;
 
         out[taskId] = TaskStatus(
           status: status,
@@ -254,6 +278,7 @@ class _ProgramTasksPageState extends State<ProgramTasksPage> {
           declaredAt: declaredAt,
           lastApproverName: approver,
           reviewRemark: remark,
+          performanceRating: rating,
         );
       }
       return out;
@@ -275,7 +300,7 @@ class _ProgramTasksPageState extends State<ProgramTasksPage> {
     final traineeRole = await _fetchUserRole(userId);
     final superiorOptions = _superiorOfficerRolesFor(traineeRole);
 
-// diálogo com dropdown; retorna a ROLE selecionada
+    // diálogo com dropdown; retorna a ROLE selecionada
     final selectedRole = await showDialog<String?>(
       context: context,
       builder: (_) {
@@ -294,24 +319,31 @@ class _ProgramTasksPageState extends State<ProgramTasksPage> {
                       'Task: ${task.title}',
                 ),
                 const SizedBox(height: 16),
-                const Text('Select approving officer', style: TextStyle(fontWeight: FontWeight.w600)),
+                const Text('Select approving officer',
+                    style: TextStyle(fontWeight: FontWeight.w600)),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
                   value: _selected,
-                  items: superiorOptions.map((r) => DropdownMenuItem(value: r, child: Text(r))).toList(),
+                  items: superiorOptions
+                      .map((r) => DropdownMenuItem(value: r, child: Text(r)))
+                      .toList(),
                   onChanged: (v) => setState(() => _selected = v),
                   decoration: const InputDecoration(
                     border: OutlineInputBorder(),
                     isDense: true,
-                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    contentPadding:
+                    EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                   ),
                 ),
               ],
             ),
             actions: [
-              TextButton(onPressed: () => Navigator.pop(context, null), child: const Text('Cancel')),
+              TextButton(
+                  onPressed: () => Navigator.pop(context, null),
+                  child: const Text('Cancel')),
               FilledButton(
-                onPressed: _selected == null ? null : () => Navigator.pop(context, _selected),
+                onPressed:
+                _selected == null ? null : () => Navigator.pop(context, _selected),
                 child: const Text('Declare'),
               ),
             ],
@@ -328,8 +360,10 @@ class _ProgramTasksPageState extends State<ProgramTasksPage> {
         : '${programId}__${chapterId}__${safeTask}';
 
     final declRef = FirebaseFirestore.instance
-        .collection('users').doc(userId)
-        .collection('task_declarations').doc(docId);
+        .collection('users')
+        .doc(userId)
+        .collection('task_declarations')
+        .doc(docId);
 
     try {
       await FirebaseFirestore.instance.runTransaction((tx) async {
@@ -341,9 +375,12 @@ class _ProgramTasksPageState extends State<ProgramTasksPage> {
 
         if (snap.exists) {
           final m = snap.data() as Map<String, dynamic>;
-          requiredQty = (m['requiredQty'] is num) ? (m['requiredQty'] as num).toInt() : requiredQty;
-          approved   = (m['approvedCount'] is num) ? (m['approvedCount'] as num).toInt() : 0;
-          pending    = (m['pendingCount']  is num) ? (m['pendingCount']  as num).toInt() : 0;
+          requiredQty =
+          (m['requiredQty'] is num) ? (m['requiredQty'] as num).toInt() : requiredQty;
+          approved =
+          (m['approvedCount'] is num) ? (m['approvedCount'] as num).toInt() : 0;
+          pending =
+          (m['pendingCount'] is num) ? (m['pendingCount'] as num).toInt() : 0;
         }
 
         if (approved + pending >= requiredQty) {
@@ -352,39 +389,39 @@ class _ProgramTasksPageState extends State<ProgramTasksPage> {
 
         if (!snap.exists) {
           tx.set(declRef, {
-            'userId'        : userId,
-            'programId'     : programId,
-            'programTitle'  : programTitle,
-            'chapterId'     : chapterId,
-            'chapterTitle'  : chapterTitle,
-            'taskId'        : task.id,
-            'taskTitle'     : task.title,
-            'requiredQty'   : requiredQty,
-            'approvedCount' : 0,
-            'pendingCount'  : 0,
-            'status'        : '',
-            'createdAt'     : FieldValue.serverTimestamp(),
-            'updatedAt'     : FieldValue.serverTimestamp(),
+            'userId': userId,
+            'programId': programId,
+            'programTitle': programTitle,
+            'chapterId': chapterId,
+            'chapterTitle': chapterTitle,
+            'taskId': task.id,
+            'taskTitle': task.title,
+            'requiredQty': requiredQty,
+            'approvedCount': 0,
+            'pendingCount': 0,
+            'status': '',
+            'createdAt': FieldValue.serverTimestamp(),
+            'updatedAt': FieldValue.serverTimestamp(),
           });
         }
 
         tx.update(declRef, {
-          'pendingCount'   : FieldValue.increment(1),
-          'declaredAt'     : FieldValue.serverTimestamp(),
-          'status'         : 'declared',
-          'declaredToRole' : selectedRole,
-          'updatedAt'      : FieldValue.serverTimestamp(),
+          'pendingCount': FieldValue.increment(1),
+          'declaredAt': FieldValue.serverTimestamp(),
+          'status': 'declared',
+          'declaredToRole': selectedRole,
+          'updatedAt': FieldValue.serverTimestamp(),
         });
 
         final compRef = declRef.collection('completions').doc();
         tx.set(compRef, {
-          'status'         : 'declared',
-          'declaredAt'     : FieldValue.serverTimestamp(),
-          'programId'      : programId,
-          'chapterId'      : chapterId,
-          'taskId'         : task.id,
-          'userId'         : userId,
-          'declaredToRole' : selectedRole,
+          'status': 'declared',
+          'declaredAt': FieldValue.serverTimestamp(),
+          'programId': programId,
+          'chapterId': chapterId,
+          'taskId': task.id,
+          'userId': userId,
+          'declaredToRole': selectedRole,
         });
       });
 
@@ -421,10 +458,7 @@ class _ProgramTasksPageState extends State<ProgramTasksPage> {
     final fieldPath = 'programs.${widget.programId}.verifications';
 
     try {
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(widget.userId)
-          .set({
+      await FirebaseFirestore.instance.collection('users').doc(widget.userId).set({
         fieldPath: FieldValue.arrayUnion([verMap]),
       }, SetOptions(merge: true));
 
@@ -445,7 +479,20 @@ class _ProgramTasksPageState extends State<ProgramTasksPage> {
   String _fmtD(DateTime d) {
     const m = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     String two(int n) => n.toString().padLeft(2, '0');
-    return '${two(d.day)} ${m[d.month-1]} ${d.year}';
+    return '${two(d.day)} ${m[d.month - 1]} ${d.year}';
+  }
+
+  String _ratingLabel(String? r) {
+    switch (r) {
+      case 'exceeds':
+        return 'Exceeds Expectations';
+      case 'meets':
+        return 'Meets Expectations';
+      case 'needs':
+        return 'Needs Improvement';
+      default:
+        return '';
+    }
   }
 
   @override
@@ -496,10 +543,12 @@ class _ProgramTasksPageState extends State<ProgramTasksPage> {
                 stream: _userProgram$,
                 builder: (context, userProgSnap) {
                   final userProg = userProgSnap.data ?? const UserProgramMeta();
-                  final lastVer = userProg.verifications.isNotEmpty ? userProg.verifications.first : null;
+                  final lastVer =
+                  userProg.verifications.isNotEmpty ? userProg.verifications.first : null;
 
-                  final totalTasks = program.chapters.fold<int>(0, (s, c) => s + c.tasks.length);
-                  final doneTasks  = program.chapters.fold<int>(0, (s, c) {
+                  final totalTasks =
+                  program.chapters.fold<int>(0, (s, c) => s + c.tasks.length);
+                  final doneTasks = program.chapters.fold<int>(0, (s, c) {
                     for (final t in c.tasks) {
                       final st = statusMap[t.id];
                       if (st != null && st.isDone) s++;
@@ -552,11 +601,20 @@ class _ProgramTasksPageState extends State<ProgramTasksPage> {
                         padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
                         child: Row(
                           children: [
-                            _FilterChip(label: 'All', selected: _tab == 0, onTap: () => setState(() => _tab = 0)),
+                            _FilterChip(
+                                label: 'All',
+                                selected: _tab == 0,
+                                onTap: () => setState(() => _tab = 0)),
                             const SizedBox(width: 8),
-                            _FilterChip(label: 'Pending', selected: _tab == 1, onTap: () => setState(() => _tab = 1)),
+                            _FilterChip(
+                                label: 'Pending',
+                                selected: _tab == 1,
+                                onTap: () => setState(() => _tab = 1)),
                             const SizedBox(width: 8),
-                            _FilterChip(label: 'Declared', selected: _tab == 2, onTap: () => setState(() => _tab = 2)),
+                            _FilterChip(
+                                label: 'Declared',
+                                selected: _tab == 2,
+                                onTap: () => setState(() => _tab = 2)),
                             const SizedBox(width: 12),
                             Expanded(
                               child: TextField(
@@ -565,7 +623,8 @@ class _ProgramTasksPageState extends State<ProgramTasksPage> {
                                   isDense: true,
                                   prefixIcon: const Icon(Icons.search),
                                   hintText: 'Search tasks…',
-                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                                  border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(10)),
                                   contentPadding: const EdgeInsets.symmetric(vertical: 10),
                                 ),
                                 onChanged: (_) => setState(() {}),
@@ -588,7 +647,7 @@ class _ProgramTasksPageState extends State<ProgramTasksPage> {
                               if ((statusMap[t.id]?.isDone ?? false)) chDone++;
                             }
                             final chTotal = ch.tasks.length;
-                            final chPct   = chTotal == 0 ? 0.0 : chDone / chTotal;
+                            final chPct = chTotal == 0 ? 0.0 : chDone / chTotal;
 
                             final q = _search.text.trim().toLowerCase();
                             final filtered = ch.tasks.where((t) {
@@ -608,13 +667,22 @@ class _ProgramTasksPageState extends State<ProgramTasksPage> {
                               done: chDone,
                               total: chTotal,
                               tasks: filtered.map((t) {
-                                final st  = statusMap[t.id];
+                                final st = statusMap[t.id];
                                 final req = t.qty;
                                 final appr = st?.approvedCount ?? 0;
                                 final pend = st?.pendingCount ?? 0;
                                 final done = st?.isDone ?? false;
 
-                                final canDeclare = !isReadOnly && !done && (appr + pend) < req;
+                                // ✅ se status == needs_improvement, NÃO está done; então canDeclare libera
+                                final canDeclare =
+                                    !isReadOnly && !done && (appr + pend) < req;
+
+                                // Task to be performed toggle
+                                final taskKey = '${ch.id}::${t.id}';
+                                final ttb = t.taskToBePerformed.trim();
+                                final hasToBePerformed = ttb.isNotEmpty;
+                                final isExpanded = _expandedTaskKeys.contains(taskKey);
+
 
                                 IconData icon;
                                 Color iconColor;
@@ -631,13 +699,33 @@ class _ProgramTasksPageState extends State<ProgramTasksPage> {
 
                                 String right = '';
                                 Color rightColor = Colors.black.withOpacity(.6);
+
+                                // ✅ rating label para exibir ao lado do Approved...
+                                final ratingLabel = _ratingLabel(st?.performanceRating);
+                                final ratingSuffix =
+                                ratingLabel.isNotEmpty ? ' • $ratingLabel' : '';
+
                                 if (done) {
                                   final dt = st?.approvedAt ?? st?.declaredAt;
                                   final who = (st?.lastApproverName ?? '').isNotEmpty
                                       ? ' • by ${st!.lastApproverName}'
                                       : '';
-                                  right = 'Approved${dt != null ? ' • ${_fmtD(dt)}' : ''}$who';
+                                  right =
+                                  'Approved${dt != null ? ' • ${_fmtD(dt)}' : ''}$who$ratingSuffix';
                                   rightColor = Colors.green.shade700;
+                                } else if ((st?.status == 'needs_improvement') || (st?.performanceRating == 'needs')) {
+                                  // ✅ Needs Improvement: não é "Approved". Deve permitir redeclare.
+                                  final dt = st?.approvedAt ?? st?.declaredAt;
+                                  final who = (st?.lastApproverName ?? '').isNotEmpty
+                                      ? ' • by ${st!.lastApproverName}'
+                                      : '';
+
+                                  // ratingSuffix já vira " • Needs Improvement"
+                                  // (fica bom porque reforça o motivo e mantém consistência)
+                                  right =
+                                  'Not approved${dt != null ? ' • ${_fmtD(dt)}' : ''}$who$ratingSuffix';
+
+                                  rightColor = Colors.orange.shade800;
                                 } else if (req > 1) {
                                   final parts = <String>['Approved $appr/$req'];
                                   if (pend > 0) parts.add('$pend submitted');
@@ -651,7 +739,8 @@ class _ProgramTasksPageState extends State<ProgramTasksPage> {
 
                                 return Container(
                                   margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                  padding:
+                                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                                   decoration: BoxDecoration(
                                     color: const Color(0xFFF6F8FB),
                                     borderRadius: BorderRadius.circular(12),
@@ -668,19 +757,55 @@ class _ProgramTasksPageState extends State<ProgramTasksPage> {
                                         child: Column(
                                           crossAxisAlignment: CrossAxisAlignment.start,
                                           children: [
-                                            Text(t.title, style: const TextStyle(fontWeight: FontWeight.w600)),
+                                            Text(t.title,
+                                                style: const TextStyle(fontWeight: FontWeight.w600)),
                                             const SizedBox(height: 2),
-                                            Text(t.id, style: TextStyle(color: Colors.black.withOpacity(.55))),
-                                            if (right.isNotEmpty) Text(right, style: TextStyle(color: rightColor)),
+                                            Text(t.id,
+                                                style:
+                                                TextStyle(color: Colors.black.withOpacity(.55))),
+                                            if (right.isNotEmpty)
+                                              Text(right, style: TextStyle(color: rightColor)),
                                             if (req > 1 && !done)
                                               Padding(
                                                 padding: const EdgeInsets.only(top: 2),
                                                 child: Text(
-                                                  'Remaining: ${st?.remaining ?? (req)}',
-                                                  style: const TextStyle(fontSize: 12, color: Colors.black54),
+                                                  'Remaining: ${st?.remaining ?? req}',
+                                                  style: const TextStyle(
+                                                      fontSize: 12, color: Colors.black54),
                                                 ),
                                               ),
                                             // remark do supervisor
+                                            // NEW: show "Task to be performed" when expanded
+                                            if (hasToBePerformed && isExpanded) ...[
+                                              const SizedBox(height: 8),
+                                              Container(
+                                                width: double.infinity,
+                                                padding: const EdgeInsets.all(8),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.white,
+                                                  border: Border.all(color: const Color(0xFFE5E7EB)),
+                                                  borderRadius: BorderRadius.circular(8),
+                                                ),
+                                                child: Column(
+                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                  children: [
+                                                    const Text(
+                                                      'Task to be performed',
+                                                      style: TextStyle(
+                                                        fontSize: 11,
+                                                        fontWeight: FontWeight.w700,
+                                                        color: Color(0xFF1F2937),
+                                                      ),
+                                                    ),
+                                                    const SizedBox(height: 4),
+                                                    Text(
+                                                      ttb,
+                                                      style: const TextStyle(fontSize: 12, height: 1.3),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ],
                                             if ((st?.reviewRemark ?? '').isNotEmpty) ...[
                                               const SizedBox(height: 8),
                                               Container(
@@ -714,24 +839,45 @@ class _ProgramTasksPageState extends State<ProgramTasksPage> {
                                           ],
                                         ),
                                       ),
-                                      if (canDeclare)
+                                      if (canDeclare || hasToBePerformed)
                                         Column(
                                           crossAxisAlignment: CrossAxisAlignment.end,
                                           children: [
-                                            const SizedBox(height: 6),
-                                            TextButton.icon(
-                                              icon: const Icon(Icons.edit_note_rounded, size: 18),
-                                              label: const Text('Declare'),
-                                              onPressed: () => _declareOnce(
-                                                userId: widget.userId,
-                                                programId: widget.programId,
-                                                programTitle: widget.programTitle,
-                                                chapterId: ch.id,
-                                                chapterTitle: ch.title,
-                                                task: t,
-                                                campaignId: widget.campaignId,
+                                            if (hasToBePerformed)
+                                              IconButton(
+                                                tooltip: isExpanded ? 'Hide details' : 'Show details',
+                                                icon: Icon(
+                                                  isExpanded
+                                                      ? Icons.keyboard_arrow_up_rounded
+                                                      : Icons.info_outline_rounded,
+                                                ),
+                                                onPressed: () {
+                                                  setState(() {
+                                                    if (isExpanded) {
+                                                      _expandedTaskKeys.remove(taskKey);
+                                                    } else {
+                                                      _expandedTaskKeys.add(taskKey);
+                                                    }
+                                                  });
+                                                },
                                               ),
-                                            ),
+
+                                            if (canDeclare) ...[
+                                              const SizedBox(height: 6),
+                                              TextButton.icon(
+                                                icon: const Icon(Icons.edit_note_rounded, size: 18),
+                                                label: const Text('Declare'),
+                                                onPressed: () => _declareOnce(
+                                                  userId: widget.userId,
+                                                  programId: widget.programId,
+                                                  programTitle: widget.programTitle,
+                                                  chapterId: ch.id,
+                                                  chapterTitle: ch.title,
+                                                  task: t,
+                                                  campaignId: widget.campaignId,
+                                                ),
+                                              ),
+                                            ],
                                           ],
                                         ),
                                     ],
@@ -829,7 +975,8 @@ class _OverallBar extends StatelessWidget {
     final p = percent.clamp(0.0, 1.0);
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-      decoration: BoxDecoration(color: const Color(0xFFF7F8FB), borderRadius: BorderRadius.circular(14)),
+      decoration:
+      BoxDecoration(color: const Color(0xFFF7F8FB), borderRadius: BorderRadius.circular(14)),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
           const Icon(Icons.insights_outlined, size: 18),
@@ -843,7 +990,7 @@ class _OverallBar extends StatelessWidget {
             minHeight: 10,
             value: p,
             backgroundColor: Colors.black.withOpacity(.08),
-            valueColor: AlwaysStoppedAnimation<Color>(Colors.indigo.shade600),
+            valueColor: AlwaysStoppedAnimation<Color>(Colors.indigo),
           ),
         ),
         const SizedBox(height: 8),
@@ -898,7 +1045,10 @@ class _ChapterCard extends StatelessWidget {
           child: Row(children: [
             const Icon(Icons.menu_book_outlined),
             const SizedBox(width: 8),
-            Expanded(child: Text(chapterTitle, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16))),
+            Expanded(
+              child: Text(chapterTitle,
+                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+            ),
             Text('$done/$total', style: TextStyle(color: Colors.black.withOpacity(.55))),
             const SizedBox(width: 10),
             SizedBox(
@@ -909,13 +1059,17 @@ class _ChapterCard extends StatelessWidget {
                   minHeight: 6,
                   value: pct,
                   backgroundColor: Colors.black.withOpacity(.08),
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.indigo.shade600),
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.indigo),
                 ),
               ),
             ),
           ]),
         ),
-        if (tasks.isNotEmpty) Padding(padding: const EdgeInsets.only(bottom: 12), child: Column(children: tasks)),
+        if (tasks.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Column(children: tasks),
+          ),
       ]),
     );
   }
