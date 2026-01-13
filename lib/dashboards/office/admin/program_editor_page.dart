@@ -1,13 +1,14 @@
+import 'dart:async'; // ✅ TimeoutException / timeout()
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:tprb/dashboards/office/admin/chapter_tasks_page.dart';
 
+// >>> Excel import service
+import 'package:tprb/features/services/excel_program_import_service.dart';
+
 /// Firestore collection root
 const _kProgramsCol = 'training_programs';
 
-/// Program editor
-/// - If [programId] is null => create new program (auto-ID or custom)
-/// - If [programId] has value => edit that program
 class ProgramEditorPage extends StatefulWidget {
   final String? programId;
   const ProgramEditorPage({super.key, required this.programId});
@@ -21,7 +22,7 @@ class _ProgramEditorPageState extends State<ProgramEditorPage> {
 
   // metadata
   final _idCtrl = TextEditingController(); // allow custom ID when creating
-  final _titleCtrl = TextEditingController();      // <- shown as "version" in admin
+  final _titleCtrl = TextEditingController(); // <- shown as "version" in admin
   final _descCtrl = TextEditingController();
   final _createdByCtrl = TextEditingController();
   final _dateCreatedCtrl = TextEditingController();
@@ -31,26 +32,29 @@ class _ProgramEditorPageState extends State<ProgramEditorPage> {
   String? _cachedProgramId;
   bool _programIdLocked = false;
 
+  // Enable Excel import only after the program has been saved/created.
+  bool _programCreated = false;
+  bool _importing = false;
+
   DocumentReference<Map<String, dynamic>> get _doc {
     final col = FirebaseFirestore.instance.collection(_kProgramsCol);
 
-    // 1) Se veio em widget, use-o
+    // 1) If editing, use provided id
     if (widget.programId != null && widget.programId!.isNotEmpty) {
       return col.doc(widget.programId);
     }
 
-    // 2) Se o usuário digitou, use o digitado
+    // 2) If user typed an ID, use it
     final typed = _idCtrl.text.trim();
     if (typed.isNotEmpty) {
-      _cachedProgramId = typed; // sincroniza cache
+      _cachedProgramId = typed;
       return col.doc(typed);
     }
 
-    // 3) Caso contrário, gere UMA vez e reutilize
-    _cachedProgramId ??= col.doc().id; // <-- gera só 1x
+    // 3) Otherwise generate once and reuse
+    _cachedProgramId ??= col.doc().id;
     if (_idCtrl.text.isEmpty) {
-      _idCtrl.text = _cachedProgramId!; // preenche o campo para o usuário ver
-      // não chame setState aqui (getter); trave no botão (abaixo)
+      _idCtrl.text = _cachedProgramId!;
     }
     return col.doc(_cachedProgramId);
   }
@@ -58,7 +62,8 @@ class _ProgramEditorPageState extends State<ProgramEditorPage> {
   @override
   void initState() {
     super.initState();
-    if (widget.programId != null) {
+    if (widget.programId != null && widget.programId!.isNotEmpty) {
+      _programCreated = true;
       _load();
     } else {
       debugPrint('ProgramId null');
@@ -80,14 +85,16 @@ class _ProgramEditorPageState extends State<ProgramEditorPage> {
     _dateCreatedCtrl.text = (data['dateCreated'] ?? '').toString();
     _dateImplCtrl.text = (data['dateOfImplementation'] ?? '').toString();
     _statusCtrl.text = (data['status'] ?? 'published').toString();
+
+    _programCreated = true;
     setState(() {});
   }
 
   void _materializeAndLockProgramId() {
-    // força materializar o _doc (se o campo estiver vazio, o getter preenche _idCtrl)
+    // forces materialize _doc (auto id) and locks Program ID editing
     final _ = _doc;
     if (!_programIdLocked) {
-      setState(() => _programIdLocked = true); // desabilita edição do Program ID
+      setState(() => _programIdLocked = true);
     }
   }
 
@@ -109,18 +116,116 @@ class _ProgramEditorPageState extends State<ProgramEditorPage> {
       'status': _statusCtrl.text.trim().toLowerCase(), // 'published' | 'draft'
     };
 
-    // Merge (preserve chapters when editing)
     await ref.set(payload, SetOptions(merge: true));
 
+    // ✅ from this point doc exists -> enable import
+    _programCreated = true;
+
     if (isNew && _idCtrl.text.trim().isEmpty) {
-      // If user didn’t provide an ID, we used an auto one; keep nothing else to do.
+      // nothing
     }
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Program saved')),
       );
-      setState(() {}); // refresh
+      setState(() {});
+    }
+  }
+
+  String _currentProgramId() => (widget.programId ?? _idCtrl.text.trim()).trim();
+
+  // ✅ Updated: timeout + debugPrintStack + doc exists guard + always reset importing
+  Future<void> _importExcel() async {
+    if (_importing) return;
+
+    if (!_programCreated) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Save the program first to enable import.')),
+      );
+      return;
+    }
+
+    final programId = _currentProgramId();
+    if (programId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Save the program first to enable import.')),
+      );
+      return;
+    }
+
+    setState(() => _importing = true);
+
+    try {
+      // 🔒 Extra guard: ensure doc exists
+      final doc = await FirebaseFirestore.instance
+          .collection(_kProgramsCol)
+          .doc(programId)
+          .get();
+
+      if (!doc.exists) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Save the program first to enable import.')),
+        );
+        return;
+      }
+
+      // ⏱️ Timeout to avoid staying stuck in "Importing..."
+      final result = await const ExcelProgramImportService()
+          .importExcelToProgram(context: context, programId: programId)
+          .timeout(const Duration(seconds: 25));
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Imported ${result.tasksImported} tasks into ${result.chaptersTouched} chapters (${result.sheetName})',
+          ),
+        ),
+      );
+
+      setState(() {});
+    } on TimeoutException catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Import timed out. Try again (or a smaller file).'),
+        ),
+      );
+    } catch (e, st) {
+      debugPrint('IMPORT ERROR: $e');
+      debugPrintStack(stackTrace: st);
+
+      if (!mounted) return;
+
+      if (ExcelProgramImportService.isSilentCancel(e)) {
+        return; // user cancelled picker/sheet dialog
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Import failed: $e')),
+      );
+
+      // Optional: make failure obvious
+      // ignore: use_build_context_synchronously
+      await showDialog<void>(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Import failed'),
+          content: SingleChildScrollView(
+            child: Text('$e\n\n(See console for stack trace)'),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _importing = false);
     }
   }
 
@@ -128,25 +233,24 @@ class _ProgramEditorPageState extends State<ProgramEditorPage> {
 
   Stream<DocumentSnapshot<Map<String, dynamic>>> _programStream() {
     final id = widget.programId ?? _idCtrl.text.trim();
-    // While creating, there’s no doc yet -> use a faux stream that emits nothing
     if (id.isEmpty) {
-      // return an empty stream that never updates UI until saved
       return const Stream<DocumentSnapshot<Map<String, dynamic>>>.empty();
     }
-    return FirebaseFirestore.instance
-        .collection(_kProgramsCol)
-        .doc(id)
-        .snapshots();
+    return FirebaseFirestore.instance.collection(_kProgramsCol).doc(id).snapshots();
   }
 
   Future<void> _addChapter() async {
-    final chapterNo = await _promptText(context, title: 'Add chapter', label: 'Chapter number (e.g. 1, 2, 3)');
+    final chapterNo = await _promptText(
+      context,
+      title: 'Add chapter',
+      label: 'Chapter number (e.g. 1, 2, 3)',
+    );
     if (chapterNo == null || chapterNo.trim().isEmpty) return;
 
     _materializeAndLockProgramId();
 
     await _doc.set({
-      'chapters': { chapterNo.trim(): {} }
+      'chapters': {chapterNo.trim(): {}}
     }, SetOptions(merge: true));
   }
 
@@ -192,14 +296,8 @@ class _ProgramEditorPageState extends State<ProgramEditorPage> {
           'This will permanently delete the program and all its chapters/tasks. Continue?',
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Delete')),
         ],
       ),
     );
@@ -209,7 +307,7 @@ class _ProgramEditorPageState extends State<ProgramEditorPage> {
     try {
       await _doc.delete();
       if (mounted) {
-        Navigator.pop(context); // return to previous screen
+        Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Program deleted successfully')),
         );
@@ -257,9 +355,7 @@ class _ProgramEditorPageState extends State<ProgramEditorPage> {
                   ),
                 TextFormField(
                   controller: _titleCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Title',
-                  ),
+                  decoration: const InputDecoration(labelText: 'Title'),
                   validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
                 ),
                 TextFormField(
@@ -284,18 +380,31 @@ class _ProgramEditorPageState extends State<ProgramEditorPage> {
                   decoration: const InputDecoration(labelText: 'Status (published | draft)'),
                 ),
                 const SizedBox(height: 12),
-                Row(
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
                   children: [
                     FilledButton.icon(
                       onPressed: _saveProgram,
                       icon: const Icon(Icons.save_outlined),
                       label: const Text('Save'),
                     ),
-                    const SizedBox(width: 12),
                     OutlinedButton.icon(
                       onPressed: _addChapter,
                       icon: const Icon(Icons.playlist_add),
                       label: const Text('Add chapter'),
+                    ),
+                    OutlinedButton.icon(
+                      // ✅ inativo até o programa ser salvo/criado
+                      onPressed: (_programCreated && !_importing) ? _importExcel : null,
+                      icon: _importing
+                          ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                          : const Icon(Icons.upload_file),
+                      label: Text(_importing ? 'Importing...' : 'Import Excel'),
                     ),
                   ],
                 ),
@@ -308,7 +417,6 @@ class _ProgramEditorPageState extends State<ProgramEditorPage> {
           const Text('Chapters', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
           const SizedBox(height: 8),
 
-          // Chapters list (live)
           StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
             stream: _programStream(),
             builder: (context, snap) {
@@ -327,12 +435,12 @@ class _ProgramEditorPageState extends State<ProgramEditorPage> {
                 );
               }
 
-              final items = chapters.keys.toList()..sort((a, b) {
-                // numeric-like sort if possible
-                final ai = int.tryParse(a) ?? 0;
-                final bi = int.tryParse(b) ?? 0;
-                return ai.compareTo(bi);
-              });
+              final items = chapters.keys.toList()
+                ..sort((a, b) {
+                  final ai = int.tryParse(a) ?? 0;
+                  final bi = int.tryParse(b) ?? 0;
+                  return ai.compareTo(bi);
+                });
 
               return Column(
                 children: [
@@ -340,7 +448,7 @@ class _ProgramEditorPageState extends State<ProgramEditorPage> {
                     Card(
                       child: ListTile(
                         title: Text('Chapter $ch'),
-                        subtitle: Text(_countTasks((chapters[ch] as Map?) ?? {}).toString() + ' tasks'),
+                        subtitle: Text('${_countTasks((chapters[ch] as Map?) ?? {})} tasks'),
                         onTap: () => _openChapterTasks(ch),
                         trailing: IconButton(
                           icon: const Icon(Icons.delete_outline),
@@ -367,14 +475,21 @@ class _ProgramEditorPageState extends State<ProgramEditorPage> {
 }
 
 /// Simple text prompt
-Future<String?> _promptText(BuildContext context,
-    {required String title, String? label, String? initial}) async {
+Future<String?> _promptText(
+    BuildContext context, {
+      required String title,
+      String? label,
+      String? initial,
+    }) async {
   final ctrl = TextEditingController(text: initial ?? '');
   return showDialog<String>(
     context: context,
     builder: (_) => AlertDialog(
       title: Text(title),
-      content: TextField(controller: ctrl, decoration: InputDecoration(labelText: label)),
+      content: TextField(
+        controller: ctrl,
+        decoration: InputDecoration(labelText: label),
+      ),
       actions: [
         TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
         FilledButton(onPressed: () => Navigator.pop(context, ctrl.text), child: const Text('OK')),

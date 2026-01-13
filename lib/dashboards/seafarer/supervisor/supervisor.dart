@@ -976,28 +976,28 @@ class _PendingItemCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 10),
-          Text(
-            'Evidence Provided:',
-            style: theme.textTheme.labelMedium
-                ?.copyWith(fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 6),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.black.withOpacity(.06)),
-            ),
-            child: Text(
-              item.evidence,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: Colors.black.withOpacity(.70),
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
+          // Text(
+          //   'Evidence Provided:',
+          //   style: theme.textTheme.labelMedium
+          //       ?.copyWith(fontWeight: FontWeight.w800),
+          // ),
+          // const SizedBox(height: 6),
+          // Container(
+          //   width: double.infinity,
+          //   padding: const EdgeInsets.all(12),
+          //   decoration: BoxDecoration(
+          //     color: Colors.white,
+          //     borderRadius: BorderRadius.circular(12),
+          //     border: Border.all(color: Colors.black.withOpacity(.06)),
+          //   ),
+          //   child: Text(
+          //     item.evidence,
+          //     style: theme.textTheme.bodySmall?.copyWith(
+          //       color: Colors.black.withOpacity(.70),
+          //     ),
+          //   ),
+          // ),
+          // const SizedBox(height: 12),
           Row(
             children: [
               const Spacer(),

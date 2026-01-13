@@ -1085,8 +1085,15 @@ class _VesselsTab extends StatelessWidget {
 
 /* ───────────────────────── TAB 4 — Users ───────────────────────── */
 
-class _UsersTab extends StatelessWidget {
+class _UsersTab extends StatefulWidget {
   const _UsersTab();
+
+  @override
+  State<_UsersTab> createState() => _UsersTabState();
+}
+
+class _UsersTabState extends State<_UsersTab> {
+  String _search = '';
 
   @override
   Widget build(BuildContext context) {
@@ -1134,6 +1141,21 @@ class _UsersTab extends StatelessWidget {
                     ),
                   ],
                 ),
+                const SizedBox(height: 14),
+
+                // Search bar
+                SizedBox(
+                  width: 420,
+                  child: TextField(
+                    decoration: const InputDecoration(
+                      prefixIcon: Icon(Icons.search),
+                      hintText: 'Search by name, vessel, user role or email...',
+                      isDense: true,
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (v) => setState(() => _search = v.trim().toLowerCase()),
+                  ),
+                ),
                 const SizedBox(height: 16),
 
                 // Lista de usuários
@@ -1156,11 +1178,34 @@ class _UsersTab extends StatelessWidget {
                       );
                     }
 
-                    final docs = snap.data?.docs ?? const [];
-                    if (docs.isEmpty) {
+                    final allDocs = snap.data?.docs ?? const [];
+                    if (allDocs.isEmpty) {
                       return const Padding(
                         padding: EdgeInsets.all(16),
                         child: Text('No users found.'),
+                      );
+                    }
+
+                    // Search filter (name, email, vessel, userRole, role)
+                    final docs = _search.isEmpty
+                        ? allDocs
+                        : allDocs.where((d) {
+                      final data = d.data();
+                      final email = (data['email'] ?? '').toString();
+                      final name =
+                      (data['userName'] ?? data['name'] ?? data['displayName'] ?? '')
+                          .toString();
+                      final userRole = (data['userRole'] ?? '').toString(); // onboard role
+                      final vessel = (data['vessel'] ?? '').toString();
+                      final appRole = (data['role'] ?? '').toString(); // admin/office/seafarer
+                      final key = '$name $email $userRole $vessel $appRole'.toLowerCase();
+                      return key.contains(_search);
+                    }).toList();
+
+                    if (docs.isEmpty) {
+                      return const Padding(
+                        padding: EdgeInsets.all(16),
+                        child: Text('No matching users.'),
                       );
                     }
 
@@ -1170,7 +1215,13 @@ class _UsersTab extends StatelessWidget {
                           Builder(builder: (_) {
                             final data = d.data();
                             final email = (data['email'] ?? '').toString();
-                            final name = (data['userName'] ?? data['name'] ?? '').toString();
+                            final name =
+                            (data['userName'] ?? data['name'] ?? data['displayName'] ?? '')
+                                .toString();
+                            final userRole = (data['userRole'] ?? '').toString();
+                            final vessel = (data['vessel'] ?? '').toString();
+
+                            // app role tag (admin/office/seafarer) — keep exactly like before
                             final role = (data['role'] ?? '').toString().toLowerCase();
 
                             Color roleColor;
@@ -1188,6 +1239,15 @@ class _UsersTab extends StatelessWidget {
                                 roleColor = Colors.grey;
                             }
 
+                            final displayName = name.isEmpty
+                                ? (email.isNotEmpty ? email.split('@')[0] : d.id)
+                                : name;
+
+                            final line2 = [
+                              if (userRole.isNotEmpty) userRole,
+                              if (vessel.isNotEmpty) vessel,
+                            ].join(' • ');
+
                             return Container(
                               margin: const EdgeInsets.only(bottom: 12),
                               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -1204,7 +1264,7 @@ class _UsersTab extends StatelessWidget {
                                     backgroundColor: const Color(0xFFCFD8DC),
                                     radius: 20,
                                     child: Text(
-                                      (name.isNotEmpty ? name[0] : email[0]).toUpperCase(),
+                                      (displayName.isNotEmpty ? displayName[0] : 'U').toUpperCase(),
                                       style: const TextStyle(color: Colors.black87),
                                     ),
                                   ),
@@ -1214,13 +1274,16 @@ class _UsersTab extends StatelessWidget {
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
                                         Text(
-                                          name.isEmpty ? email.split('@')[0] : name,
+                                          displayName,
                                           style: const TextStyle(
                                             fontWeight: FontWeight.w700,
                                             color: Colors.black87,
                                           ),
                                         ),
-                                        Text(email, style: const TextStyle(color: Colors.black54)),
+                                        if (line2.isNotEmpty)
+                                          Text(line2, style: const TextStyle(color: Colors.black54)),
+                                        if (email.isNotEmpty)
+                                          Text(email, style: const TextStyle(color: Colors.black54)),
                                       ],
                                     ),
                                   ),
@@ -1241,13 +1304,14 @@ class _UsersTab extends StatelessWidget {
                                         ),
                                       ),
                                       const SizedBox(width: 8),
+                                      // Edit button — keep exactly like before
                                       OutlinedButton.icon(
                                         icon: const Icon(Icons.edit_outlined, size: 18),
                                         label: const Text('Edit'),
                                         onPressed: () {
                                           Navigator.of(context).push(
                                             MaterialPageRoute(
-                                              builder: (_) => NewUserPage(userId: d.id), // << modo Edit
+                                              builder: (_) => NewUserPage(userId: d.id),
                                             ),
                                           );
                                         },
